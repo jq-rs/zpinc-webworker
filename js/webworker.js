@@ -879,7 +879,7 @@ onmessage = function (e) {
 				const padsz = padme(msglen + padlen) - msglen;
 				//console.log("TX: Msgsize " + msgsz + " padding sz " + padsz + " keysz " + keysz)
 				if(padsz > 0) {
-					let padding = pseudoRandBytes(padz); // avoid using real random for padding
+					let padding = pseudoRandBytes(padsz); // avoid using real random for padding
 					newmessage += Uint8ToString(padding);
 				}
 
