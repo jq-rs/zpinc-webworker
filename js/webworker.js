@@ -416,7 +416,7 @@ function processOnMessageData(msg) {
 	if(gMyDhKey.bdMsgCryptKey) {
 		let blakehmac = new BLAKE2s(HMAC_LEN, gMyDhKey.bdChannelKey);
 		blakehmac.update(DOMAIN_AUTHKEY);
-		blakehmac.update(noncem.slice(2));
+		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
 		let rhmac = blakehmac.digest();
 		if (true == isEqualHmacs(hmac, rhmac)) {
@@ -429,7 +429,7 @@ function processOnMessageData(msg) {
 	if(!hmacok && gMyDhKey.prevBdMsgCryptKey) {
 		let blakehmac = new BLAKE2s(HMAC_LEN, gMyDhKey.prevBdChannelKey);
 		blakehmac.update(DOMAIN_AUTHKEY);
-		blakehmac.update(noncem.slice(2));
+		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
 		let rhmac = blakehmac.digest();
 		if (true == isEqualHmacs(hmac, rhmac)) {
@@ -442,7 +442,7 @@ function processOnMessageData(msg) {
 	if(!hmacok) {
 		let blakehmac = new BLAKE2s(HMAC_LEN, gChannelKey);
 		blakehmac.update(DOMAIN_AUTHKEY);
-		blakehmac.update(noncem.slice(2));
+		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
 		let rhmac = blakehmac.digest();
 		if (false == isEqualHmacs(hmac, rhmac)) {
@@ -466,11 +466,8 @@ function processOnMessageData(msg) {
 	//console.log("RX: Msgsize " + msgsz + " Keysz " + keysz + " Pad size " + padsz);
 
 	let timeU16 = StringToUint16(decrypted.slice(4, 6));
-	//console.log("RX: Timestamp " + timeU16)
 	let weekU16 = StringToUint16(decrypted.slice(6, 8));
-	//console.log("RX: Weekstamp " + weekU16)
 	let flagU16 = StringToUint16(decrypted.slice(8, HDRLEN));
-	//console.log("RX: Flagstamp " + flagU16)
 
 	let msgDate = readTimestamp(timeU16, weekU16, flagU16 & ALLISSET);
 
@@ -839,17 +836,12 @@ onmessage = function (e) {
 
 				//version and msg size
 				newmessage = Uint16ToString(msgsz);
-				//console.log("Msgsz " + msgsz)
 				//keysz
 				newmessage += Uint16ToString(keysz);
-				//console.log("Keysz " + keysz)
 				//stamps
 				newmessage += Uint16ToString(timestamp);
-				//console.log("Timestamp " + timestamp)
 				newmessage += Uint16ToString(weekstamp);
-				//console.log("Weekstamp " + weekstamp)
 				newmessage += Uint16ToString(flagstamp);
-				//console.log("Flagstamp " + flagstamp)
 
 				//message itself
 				newmessage += data;
@@ -874,7 +866,7 @@ onmessage = function (e) {
 
 				let blakehmac = new BLAKE2s(HMAC_LEN, channel_key);
 				blakehmac.update(DOMAIN_AUTHKEY);
-				blakehmac.update(nonce.slice(2));
+				blakehmac.update(nonce.slice(24));
 				blakehmac.update(hmacarr);
 				let hmac = blakehmac.digest();
 
