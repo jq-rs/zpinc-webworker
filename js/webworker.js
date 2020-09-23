@@ -631,6 +631,34 @@ function bdIsZeroes(bd) {
 	return true;
 }
 
+function pseudoRandBytes(byteLength) {
+	if (byteLength <= 0)
+		throw new RangeError('byteLength MUST be > 0');
+
+	let blen = 0;
+	let bleft = byteLength;
+	let buf = new Uint8Array(byteLength);
+	if (!SEED) {
+		SEED = new Uint8Array(32);
+		self.crypto.getRandomValues(SEED); // avoid using extensive amount of secure random
+	}
+	let val = new BLAKE2s(32, SEED);
+
+	while (bleft > 0) {
+		for (let i = 0; i < 32; i++) {
+			let v = val.digest();
+			buf[blen++] = v[i];
+			bleft--;
+			if (0 == bleft) {
+				SEED = val.digest();
+				break;
+			}
+			val = new BLAKE2s(32, val.digest());
+		}
+	}
+	return buf;
+}
+
 onmessage = function (e) {
 	let cmd = e.data[0];
 	let data = e.data[1];
@@ -851,8 +879,7 @@ onmessage = function (e) {
 				const padsz = padme(msglen + padlen) - msglen;
 				//console.log("TX: Msgsize " + msgsz + " padding sz " + padsz + " keysz " + keysz)
 				if(padsz > 0) {
-					let padding = new Uint8Array(padsz);
-					self.crypto.getRandomValues(padding);
+					let padding = pseudoRandBytes(padz); // avoid using real random for padding
 					newmessage += Uint8ToString(padding);
 				}
 
