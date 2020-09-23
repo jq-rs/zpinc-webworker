@@ -53,6 +53,8 @@ const MSGPRESACKREQ =    (0x1 << 7);
 const MSGISBDONE =       (0x1 << 8);
 const MSGISBDACK =		 (0x1 << 9);
 
+let SEED;
+
 const SCRYPT_SALTLEN = 32;
 const SCRYPT_N = 32768;
 const SCRYPT_R = 8;
