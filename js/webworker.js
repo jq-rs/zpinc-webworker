@@ -39,7 +39,9 @@ const UIDNONCE = new Uint8Array([ 2,   3,   5,   7,  11,  13,  17,  19,
 const CHANONCE = new Uint8Array([0x24, 0x3f, 0x6a, 0x88, 0x85, 0xa3, 0x08, 0xd3,
 								 0x13, 0x19, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x44,
 								 0xa4, 0x09, 0x38, 0x22, 0x29, 0x9f, 0x31, 0xd0]);
-const HDRLEN = 10;
+const SALTSTR = StringToUint8("ZpncSalt");
+const PERSTR = StringToUint8('ZpincApp');
+const HDRLEN = 18;
 
 /* Msg type flags */
 const MSGISFULL =         0x1;
@@ -59,11 +61,14 @@ const SCRYPT_SALTLEN = 32;
 const SCRYPT_N = 32768;
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
-const SCRYPT_DKLEN = 64;
+const SCRYPT_DKLEN = 32;
 
 const DH_BITS = 256; //32 bytes
 
 let gMyDhKey = {
+	pw: null,
+	bdpw: null,
+	sid: null,
 	group: null,
 	private: null,
 	public: null,
@@ -77,6 +82,7 @@ let gMyDhKey = {
 	fsInformed: false
 };
 
+let gSidDb = {};
 let gDhDb = {};
 let gBdDb = {};
 let gBdAckDb = {};
@@ -128,6 +134,15 @@ function isEqualHmacs(hmac, rhmac) {
 	return true;
 }
 
+function isEqualSid(sid1, sid2) {
+	for (let i = 0; i < sid1.byteLength; i++) {
+		if (sid1[i] != sid2[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
 function StringToUint8(str) {
 	let arr = new Uint8Array(str.length);
 	let len = str.length;
@@ -147,11 +162,11 @@ function Uint8ToString(arr) {
 	return str;
 }
 
-function StringToUint16(str) {
+function StringToUint16Val(str) {
 	return ((str.charCodeAt(0) & 0xff) << 8) | (str.charCodeAt(1) & 0xff);
 }
 
-function Uint16ToString(val) {
+function Uint16ValToString(val) {
 	let str = new String('');
 	str += String.fromCharCode((val & 0xff00) >> 8);
 	str += String.fromCharCode(val & 0xff);
@@ -163,11 +178,19 @@ function initBd(myuid) {
 	gBdAckDb = {};
 	gMyDhKey.secret = null;
 	gMyDhKey.secretAcked = false;
-	gMyDhKey.bdKey = null;
+	gMyDhKey.bd = null;
 	if (gMyDhKey.fsInformed) {
 		processOnForwardSecrecyOff();
 		gMyDhKey.fsInformed = false;
 	}
+}
+
+function initSid(myuid) {
+	gSidDb = {};
+	gMyDhKey.sid = null;
+	gMyDhKey.public = null;
+	gMyDhKey.group = null;
+	gMyDhKey.private = null;
 }
 
 function initDhBd(myuid) {
@@ -179,10 +202,41 @@ function initDhBd(myuid) {
 	}
 	gMyDhKey.secret = null;
 	gMyDhKey.secretAcked = false;
+	gMyDhKey.bd = null;
 	gMyDhKey.bdMsgCryptKey = null;
 	if (gMyDhKey.fsInformed) {
 		processOnForwardSecrecyOff();
 		gMyDhKey.fsInformed = false;
+	}
+}
+
+function setDhPublic(myuid, sid) {
+	let siddb_sorted = Object.fromEntries(Object.entries(gSidDb).sort());
+
+	let pubok = true;
+	let cnt = 0;
+	let users = "";
+	for (let userid in siddb_sorted) {
+		//console.log("Found sid " +  gSidDb[userid] + " for user " + userid);
+		if(!isEqualSid(gSidDb[userid], sid)) {
+			pubok = false;
+			break;
+		}
+		users += userid;
+		cnt++;
+	}
+	if(pubok && cnt > 1) {
+		//console.log("Setting public key for sid " + sid + " cnt " + cnt);
+		const userarr = StringToUint8(users);
+		let arr = new Uint8Array(sid.byteLength + gMyDhKey.bdpw.byteLength + userarr.byteLength);
+		arr.set(sid, 0);
+		arr.set(gMyDhKey.bdpw, sid.byteLength);
+		arr.set(userarr, sid.byteLength + gMyDhKey.bdpw.byteLength);
+		const sha512 = nacl.hash(arr);
+		gMyDhKey.group = ristretto255.fromHash(sha512);
+		gMyDhKey.private = ristretto255.scalar.getRandom();
+		gMyDhKey.public = ristretto255.scalarMult(gMyDhKey.private, gMyDhKey.group);
+		gDhDb[myuid] = Uint8ToString(gMyDhKey.public);
 	}
 }
 
@@ -200,8 +254,9 @@ function bdSetZeroes() {
 }
 
 const BDDEBUG = false;
-function processBd(uid, msgtype, message) {
-	const myuid = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey));
+function processBd(myuid, uid, msgtype, message) {
+	let init = false;
+
 	if(uid == myuid) {  //received own message, init due to resyncing
 		initDhBd(myuid);
 		init = true;
@@ -209,14 +264,13 @@ function processBd(uid, msgtype, message) {
 	else if (message.length == DH_BITS/8 || message.length == 2 * (DH_BITS/8)) {
 		if(BDDEBUG)
 			console.log("Got " + uid + " public+bd key, len " + message.length);
-		let init = false;
 
 		if (message.length == DH_BITS/8 && !(msgtype & MSGISBDONE) && !(msgtype & MSGISBDACK)) {
 			if (!(msgtype & MSGISPRESENCEACK)) {
 				msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
 			}
-			if(BDDEBUG)
-				console.log("!!! bd invalidated in short message !!!");
+			//if(BDDEBUG)
+			//	console.log("!!! bd invalidated in short message !!!");
 			initBd(myuid);
 		}
 
@@ -270,6 +324,7 @@ function processBd(uid, msgtype, message) {
 			if (prevkey && nextkey) {
 				let step = ristretto255.sub(nextkey, prevkey);
 				gMyDhKey.bd = ristretto255.scalarMult(gMyDhKey.private, step);
+				//console.log("Setting Bd " + gMyDhKey.bd);
 				gBdDb[myuid] = Uint8ToString(gMyDhKey.bd);
 			}
 
@@ -461,15 +516,16 @@ function processOnMessageData(msg) {
 		return;
 	}
 
-	let msgsz = StringToUint16(decrypted.slice(0, 2)); //includes also version which is zero
-	let keysz = StringToUint16(decrypted.slice(2, 4));
-
+	let msgsz = StringToUint16Val(decrypted.slice(0, 2)); //includes also version which is zero
+	let sid = StringToUint8(decrypted.slice(2, 10));
+	let keysz = StringToUint16Val(decrypted.slice(10, 12));
+	
 	//let padsz = decrypted.length - msgsz - keysz;
-	//console.log("RX: Msgsize " + msgsz + " Keysz " + keysz + " Pad size " + padsz);
+	//console.log("RX: Msgsize " + msgsz + " Sid " + sid + " Keysz " + keysz + " Pad size " + padsz);
 
-	let timeU16 = StringToUint16(decrypted.slice(4, 6));
-	let weekU16 = StringToUint16(decrypted.slice(6, 8));
-	let flagU16 = StringToUint16(decrypted.slice(8, HDRLEN));
+	let timeU16 = StringToUint16Val(decrypted.slice(12, 14));
+	let weekU16 = StringToUint16Val(decrypted.slice(14, 16));
+	let flagU16 = StringToUint16Val(decrypted.slice(16, HDRLEN));
 
 	let msgDate = readTimestamp(timeU16, weekU16, flagU16 & ALLISSET);
 
@@ -495,9 +551,34 @@ function processOnMessageData(msg) {
 	if (flagU16 & ISBDACK)
 		msgtype |= MSGISBDACK;
 
-	if(keysz > 0) {
+	const myuid = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey));
+	if(myuid == uid) { //resync
+		initSid(myuid);
+	}
+	else if (uid != myuid) {
+		if (!gMyDhKey.sid || !isEqualSid(gMyDhKey.sid, sid)) {
+			initSid(myuid);
+			//console.log("RX: setting sid to " + sid + " mysid " + gMyDhKey.sid);
+			setSid(myuid, sid);
+			if (!(msgtype & MSGISPRESENCEACK)) {
+				msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
+			}
+		}
+		if(!gSidDb[uid]) {
+			gSidDb[uid] = sid;
+			if(gMyDhKey.public) {
+				//console.log("Resetting public key for sid " + sid + " cnt " + cnt);
+				setDhPublic(myuid, sid);
+			}
+		}
+		else if(isEqualSid(gSidDb[uid], sid) && !gMyDhKey.public) {
+			setDhPublic(myuid, sid);
+		}
+	}
+
+	if(gMyDhKey.public && keysz > 0) {
 		const keystr = decrypted.slice(msgsz, msgsz+keysz);
-		msgtype = processBd(uid, msgtype, keystr);
+		msgtype = processBd(myuid, uid, msgtype, keystr);
 	}
 
 	postMessage(["data", uid, channel, msgDate.valueOf(), message, msgtype, fsEnabled]);
@@ -661,6 +742,32 @@ function pseudoRandBytes(byteLength) {
 	return buf;
 }
 
+function getSid(myuid) {
+	if (null == gMyDhKey.sid) {
+		let sid = new Uint8Array(8);
+		self.crypto.getRandomValues(sid);
+		setSid(myuid, sid);
+	}
+	//console.log("Getting getsid " +  gMyDhKey.sid);
+	return gMyDhKey.sid;
+}
+
+function setSid(myuid, sid) {
+	//console.log("Setting setsid to " + sid);
+	//scrypt
+	scrypt(gMyDhKey.pw, sid, {
+		N: SCRYPT_N,
+		r: SCRYPT_R,
+		p: SCRYPT_P,
+		dkLen: SCRYPT_DKLEN,
+		encoding: 'binary'
+	}, function (derivedKey) {
+		gMyDhKey.bdpw = derivedKey;
+	});
+	gMyDhKey.sid = sid;
+	gSidDb[myuid] = sid;
+}
+
 onmessage = function (e) {
 	let cmd = e.data[0];
 	let data = e.data[1];
@@ -673,14 +780,12 @@ onmessage = function (e) {
 				let uid = e.data[4];
 				let channel = e.data[5];
 				let passwd = StringToUint8(e.data[6]);
-				let slicedpasswd = passwd.slice(0, 32);
 				let isEncryptedChannel = e.data[7];
 				let prevBdKey = e.data[8];
 
 				//salt
-				let salt = new BLAKE2s(SCRYPT_SALTLEN, slicedpasswd);
+				let salt = new BLAKE2s(SCRYPT_SALTLEN, { salt: SALTSTR, personalization: PERSTR, key: passwd.slice(0, 32) });
 				salt.update(passwd);
-				salt.update(StringToUint8('salty'));
 
 				//scrypt
 				scrypt(passwd, salt.digest(), {
@@ -693,18 +798,23 @@ onmessage = function (e) {
 					passwd = derivedKey;
 				});
 
+				gMyDhKey.pw = passwd;
+
+				//gMyDhKey.private = ristretto255.scalar.getRandom();
+				/*
 				gMyDhKey.group = ristretto255.fromHash(passwd);
 				gMyDhKey.private = ristretto255.scalar.getRandom();
 				gMyDhKey.public = ristretto255.scalarMult(gMyDhKey.private, gMyDhKey.group);
 				//update database
 				gDhDb[uid] = Uint8ToString(gMyDhKey.public);
+				*/
 
-				gChannelKey = createChannelKey(slicedpasswd);
+				gChannelKey = createChannelKey(passwd);
 				if(prevBdKey) {
 					createPrevBd(prevBdKey, gChannelKey);
 				}
 
-				let messageKey = createMessageKey(slicedpasswd);
+				let messageKey = createMessageKey(passwd);
 
 				gMsgCryptKey = messageKey;
 				gMyUid = btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey)));
@@ -712,7 +822,6 @@ onmessage = function (e) {
 				//wipe unused
 				salt = "";
 				passwd = "";
-				slicedpasswd = "";
 				messageKey = "";
 				prevBdKey = "";
 
@@ -814,23 +923,30 @@ onmessage = function (e) {
 						let pub = Uint8ToString(gMyDhKey.public);
 						keysz += pub.length;
 						data += pub;
+						//console.log("TX: Adding pub key " + gMyDhKey.public);
+					}
+					else {
+						//console.log("TX: Pub key is null!");
+						padlen += DH_BITS/8;
 					}
 					//add BD key, if it exists
 					if (gMyDhKey.bd && !(msgtype & MSGISPRESENCEACK)) {
 						if(bdIsZeroes(gMyDhKey.bd)) {
+							//console.log("Adding ISDBONE flag");
 							flagstamp |= ISBDONE;
 							padlen += DH_BITS/8;
 						}
 						else {
 							let bd = Uint8ToString(gMyDhKey.bd);
-							//console.log("Bd " + bd + " dhkeybd " + gMyDhKey.bd);
+							//console.log("TX: Bd " + bd + " dhkeybd " + gMyDhKey.bd);
 							keysz += bd.length;
 							data += bd;
 						}
+						let sidcnt = Object.keys(gDhDb).length;
 						let pubcnt = Object.keys(gDhDb).length;
 						let bdcnt = Object.keys(gBdDb).length;
-						//console.log("During send pubcnt " + pubcnt + " bdcnt " + bdcnt)
-						if (pubcnt == bdcnt && gMyDhKey.secret != null) {
+						//console.log("During send sidcnt " + sidcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
+						if (sidcnt == pubcnt && pubcnt == bdcnt && gMyDhKey.secret != null) {
 							flagstamp |= ISBDACK;
 							if (gBdAckDb[uid] == null) {
 								//console.log("Adding self to bdack db");
@@ -864,14 +980,18 @@ onmessage = function (e) {
 					break;
 				}
 
+
 				//version and msg size
-				newmessage = Uint16ToString(msgsz);
+				newmessage = Uint16ValToString(msgsz);
+				//sid
+				const sid = getSid(uid);
+				newmessage += Uint8ToString(sid);
 				//keysz
-				newmessage += Uint16ToString(keysz);
+				newmessage += Uint16ValToString(keysz);
 				//stamps
-				newmessage += Uint16ToString(timestamp);
-				newmessage += Uint16ToString(weekstamp);
-				newmessage += Uint16ToString(flagstamp);
+				newmessage += Uint16ValToString(timestamp);
+				newmessage += Uint16ValToString(weekstamp);
+				newmessage += Uint16ValToString(flagstamp);
 
 				//message itself
 				newmessage += data;
@@ -879,7 +999,7 @@ onmessage = function (e) {
 				const msglen = msgsz + keysz;
 				//padmé padding
 				const padsz = padme(msglen + padlen) - msglen;
-				//console.log("TX: Msgsize " + msgsz + " padding sz " + padsz + " keysz " + keysz)
+				//console.log("TX: Msgsize " + msgsz + " Sid " + sid + " padding sz " + padsz + " keysz " + keysz)
 				if(padsz > 0) {
 					let padding = pseudoRandBytes(padsz); // avoid using real random for padding
 					newmessage += Uint8ToString(padding);
