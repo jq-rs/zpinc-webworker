@@ -726,10 +726,10 @@ function pseudoRandBytes(byteLength) {
 		SEED = new Uint8Array(32);
 		self.crypto.getRandomValues(SEED); // avoid using extensive amount of secure random
 	}
-	let val = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: SEED });
+	let val = new BLAKE2b(64, { salt: SALTSTR, personalization: PERSTR, key: SEED });
 
 	while (bleft > 0) {
-		for (let i = 0; i < 32; i++) {
+		for (let i = 0; i < 64; i++) {
 			let v = val.digest();
 			buf[blen++] = v[i];
 			bleft--;
@@ -737,7 +737,7 @@ function pseudoRandBytes(byteLength) {
 				SEED = val.digest();
 				break;
 			}
-			val = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: val.digest() });
+			val = new BLAKE2b(64, { salt: SALTSTR, personalization: PERSTR, key: val.digest() });
 		}
 	}
 	return buf;
