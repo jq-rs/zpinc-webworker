@@ -7,7 +7,7 @@
  */
 
 
-importScripts('cbor.js', 'blake2b.js', 'scrypt-async.js', 'nacl.js', 'ristretto255.js', 'int.js', 'binary.js');
+importScripts('cbor.js', 'blake2b.js', 'scrypt-async.js', 'nacl.js', 'ristretto255.js', 'wipe.js', 'int.js', 'binary.js');
 
 let gWebSocket;
 let gMyAddr;
@@ -151,31 +151,6 @@ function StringToUint8(str) {
 		arr[i] = str.charCodeAt(i);
 	}
 	return arr;
-}
-
-// Copyright (C) 2016 Dmitry Chestnykh
-// MIT License. See LICENSE file for details.
-/**
- * Sets all values in the given array to zero and returns it.
- *
- * The fact that it sets bytes to zero can be relied on.
- *
- * There is no guarantee that this function makes data disappear from memory,
- * as runtime implementation can, for example, have copying garbage collector
- * that will make copies of sensitive data before we wipe it. Or that an
- * operating system will write our data to swap or sleep image. Another thing
- * is that an optimizing compiler can remove calls to this function or make it
- * no-op. There's nothing we can do with it, so we just do our best and hope
- * that everything will be okay and good will triumph over evil.
- */
-function wipe(array) {
-    // Right now it's similar to array.fill(0). If it turns
-    // out that runtimes optimize this call away, maybe
-    // we can try something else.
-    for (var i = 0; i < array.length; i++) {
-        array[i] = 0;
-    }
-    return array;
 }
 
 function Uint8ToString(arr) {
@@ -831,7 +806,7 @@ onmessage = function (e) {
 				wipe(salt);
 				wipe(passwd);
 				wipe(messageKey);
-				wipe(prevBdKey);
+				prevBdKey = null;
 
 				let bfchannel;
 				if (!isEncryptedChannel) {
@@ -864,7 +839,7 @@ onmessage = function (e) {
 				initDhBd(uid);
 
 				//wipe unused
-				wipe(prevBdKey);
+				prevBdKey=null;
 
 				uid = btoa(nacl.secretbox(uid, UIDNONCE, gChannelKey));
 				if (!isEncryptedChannel) {
