@@ -779,16 +779,7 @@ function getSid(myuid) {
 
 function setSid(myuid, sid) {
 	//console.log("Setting setsid to " + sid);
-	//scrypt
-	scrypt(gMyDhKey.pw, sid, {
-		N: SCRYPT_N,
-		r: SCRYPT_R,
-		p: SCRYPT_P,
-		dkLen: SCRYPT_DKLEN,
-		encoding: 'binary'
-	}, function (derivedKey) {
-		gMyDhKey.bdpw = derivedKey;
-	});
+	gMyDhKey.bdpw = gMsgCryptKey;
 	gMyDhKey.sid = sid;
 	gSidDb[myuid] = sid;
 }
