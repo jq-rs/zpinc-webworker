@@ -7,7 +7,7 @@
  */
 
 
-importScripts('cbor.js', 'blake2s.js', 'scrypt-async.js', 'nacl.js', 'ristretto255.js');
+importScripts('cbor.js', 'blake2b.js', 'scrypt-async.js', 'nacl.js', 'ristretto255.js', 'int.js', 'binary.js');
 
 let gWebSocket;
 let gMyAddr;
@@ -39,8 +39,9 @@ const UIDNONCE = new Uint8Array([ 2,   3,   5,   7,  11,  13,  17,  19,
 const CHANONCE = new Uint8Array([0x24, 0x3f, 0x6a, 0x88, 0x85, 0xa3, 0x08, 0xd3,
 								 0x13, 0x19, 0x8a, 0x2e, 0x03, 0x70, 0x73, 0x44,
 								 0xa4, 0x09, 0x38, 0x22, 0x29, 0x9f, 0x31, 0xd0]);
-const SALTSTR = StringToUint8("ZpncSalt");
-const PERSTR = StringToUint8('ZpincApp');
+const SALTSTR = StringToUint8("ZpincSaltDomain1");
+const PERSTR = StringToUint8('ZpincAppDomainv1');
+const PERBDSTR = StringToUint8('ZpincBdDomain!v1');
 const HDRLEN = 18;
 
 /* Msg type flags */
@@ -117,8 +118,8 @@ function readTimestamp(timestamp, weekstamp, flagstamp) {
 }
 
 function isEqualHmacs(hmac, rhmac) {
-	let mac1 = new BLAKE2s(HMAC_LEN);
-	let mac2 = new BLAKE2s(HMAC_LEN);
+	let mac1 = new BLAKE2b(HMAC_LEN);
+	let mac2 = new BLAKE2b(HMAC_LEN);
 
 	mac1.update(hmac);
 	mac2.update(rhmac);
@@ -252,13 +253,13 @@ function setDhPublic(myuid, sid) {
 	}
 	if(pubok && cnt > 1) {
 		//console.log("Setting public key for sid " + sid + " cnt " + cnt);
+		let sid16 = new Uint8Array(16);
+		sid16.set(sid, 0);
 		const userarr = StringToUint8(users);
-		let arr = new Uint8Array(sid.byteLength + gMyDhKey.bdpw.byteLength + userarr.byteLength);
-		arr.set(sid, 0);
-		arr.set(gMyDhKey.bdpw, sid.byteLength);
-		arr.set(userarr, sid.byteLength + gMyDhKey.bdpw.byteLength);
-		const sha512 = nacl.hash(arr);
-		gMyDhKey.group = ristretto255.fromHash(sha512);
+		let arr = new Uint8Array(userarr.byteLength);
+		arr.set(userarr, 0);
+		const digest64B = new BLAKE2b(64, { salt: sid16, personalization: PERBDSTR, key: gMsgCryptKey });
+		gMyDhKey.group = ristretto255.fromHash(digest64B.digest());
 		gMyDhKey.private = ristretto255.scalar.getRandom();
 		gMyDhKey.public = ristretto255.scalarMult(gMyDhKey.private, gMyDhKey.group);
 		gDhDb[myuid] = Uint8ToString(gMyDhKey.public);
@@ -424,7 +425,7 @@ function processBd(myuid, uid, msgtype, message) {
 						//console.log("!!! My skey " + skey.toString(16) + " !!!");
 						gMyDhKey.secret = skey;
 
-						let rnd = new BLAKE2s(32, gChannelKey);
+						let rnd = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: gChannelKey});
 						rnd.update(StringToUint8(gMyDhKey.secret.toString(16)));
 
 						gMyDhKey.bdChannelKey = createChannelKey(rnd.digest());
@@ -496,7 +497,7 @@ function processOnMessageData(msg) {
 
 	//try all three options
 	if(gMyDhKey.bdMsgCryptKey) {
-		let blakehmac = new BLAKE2s(HMAC_LEN, gMyDhKey.bdChannelKey);
+		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gMyDhKey.bdChannelKey });
 		blakehmac.update(DOMAIN_AUTHKEY);
 		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
@@ -509,7 +510,7 @@ function processOnMessageData(msg) {
 		}
 	}
 	if(!hmacok && gMyDhKey.prevBdMsgCryptKey) {
-		let blakehmac = new BLAKE2s(HMAC_LEN, gMyDhKey.prevBdChannelKey);
+		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gMyDhKey.prevBdChannelKey });
 		blakehmac.update(DOMAIN_AUTHKEY);
 		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
@@ -522,7 +523,7 @@ function processOnMessageData(msg) {
 		}
 	}
 	if(!hmacok) {
-		let blakehmac = new BLAKE2s(HMAC_LEN, gChannelKey);
+		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gChannelKey });
 		blakehmac.update(DOMAIN_AUTHKEY);
 		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
@@ -693,9 +694,9 @@ function openSocket(gMyPort, gMyAddr) {
 function createChannelKey(key) {
 	if(key.length > 32)
 		throw new RangeError("Too large key " + key.length);
-	let round = new BLAKE2s(32, key);
+	let round = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: key });
 	round.update(DOMAIN_CHANKEY);
-	let blakecb = new BLAKE2s(32, key);
+	let blakecb = new BLAKE2b(32, key);
 	blakecb.update(DOMAIN_CHANKEY);
 	blakecb.update(round.digest());
 	return blakecb.digest();
@@ -704,7 +705,7 @@ function createChannelKey(key) {
 function createMessageKey(key) {
 	if(key.length > 32)
 		throw new RangeError("Too large key " + key.length);
-	let blakecbc = new BLAKE2s(32, key);
+	let blakecbc = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: key });
 	blakecbc.update(DOMAIN_ENCKEY);
 	return blakecbc.digest();
 }
@@ -722,7 +723,7 @@ function padme(msgsize) {
 }
 
 function createPrevBd(prevBdKey, channelKey) {
-	let rnd = new BLAKE2s(32, channelKey);
+	let rnd = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: channelKey });
 	rnd.update(StringToUint8(prevBdKey));
 
 	//console.log("Setting prev channel key and crypt");
@@ -750,7 +751,7 @@ function pseudoRandBytes(byteLength) {
 		SEED = new Uint8Array(32);
 		self.crypto.getRandomValues(SEED); // avoid using extensive amount of secure random
 	}
-	let val = new BLAKE2s(32, SEED);
+	let val = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: SEED });
 
 	while (bleft > 0) {
 		for (let i = 0; i < 32; i++) {
@@ -761,7 +762,7 @@ function pseudoRandBytes(byteLength) {
 				SEED = val.digest();
 				break;
 			}
-			val = new BLAKE2s(32, val.digest());
+			val = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: val.digest() });
 		}
 	}
 	return buf;
@@ -800,7 +801,7 @@ onmessage = function (e) {
 				let prevBdKey = e.data[8];
 
 				//salt
-				let salt = new BLAKE2s(SCRYPT_SALTLEN, { salt: SALTSTR, personalization: PERSTR, key: passwd.slice(0, 32) });
+				let salt = new BLAKE2b(SCRYPT_SALTLEN, { salt: SALTSTR, personalization: PERSTR, key: passwd.slice(0, 32) });
 				salt.update(passwd);
 
 				//scrypt
@@ -815,15 +816,6 @@ onmessage = function (e) {
 				});
 
 				gMyDhKey.pw = passwd;
-
-				//gMyDhKey.private = ristretto255.scalar.getRandom();
-				/*
-				gMyDhKey.group = ristretto255.fromHash(passwd);
-				gMyDhKey.private = ristretto255.scalar.getRandom();
-				gMyDhKey.public = ristretto255.scalarMult(gMyDhKey.private, gMyDhKey.group);
-				//update database
-				gDhDb[uid] = Uint8ToString(gMyDhKey.public);
-				*/
 
 				gChannelKey = createChannelKey(passwd);
 				if(prevBdKey) {
@@ -1029,7 +1021,7 @@ onmessage = function (e) {
 				hmacarr.set(nonce, 0);
 				hmacarr.set(arr, nonce.byteLength);
 
-				let blakehmac = new BLAKE2s(HMAC_LEN, channel_key);
+				let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: channel_key });
 				blakehmac.update(DOMAIN_AUTHKEY);
 				blakehmac.update(nonce.slice(24));
 				blakehmac.update(hmacarr);
