@@ -877,7 +877,7 @@ onmessage = function (e) {
 				self.crypto.getRandomValues(nonce);
 
 				if (isEncryptedChannel) {
-					channel = Uint8ToString(nacl.secretbox.open(atob(channel), CHANONCE, gChannelKey));
+					channel = atob(Uint8ToString(nacl.secretbox.open(StringToUint8(channel), CHANONCE, gChannelKey)));
 				}
 
 				let weekstamp = createWeekstamp(valueofdate);
