@@ -163,6 +163,8 @@ function StringToUint8(str) {
 
 function Uint8ToString(arr) {
 	let str = new String('');
+	if(!arr)
+		return str;
 	for (let i = 0; i < arr.length; i++) {
 		str += String.fromCharCode(arr[i]);
 	}
@@ -415,8 +417,9 @@ function processBd(myuid, uid, msgtype, message) {
 						gMyDhKey.bdMsgCryptKey = key;
 						//console.log("Created key msg crypt! " + key)
 
-						rnd = '';
-						key = '';
+						//wipe unused
+						wipe(rnd);
+						wipe(key);
 					}
 				}
 				//if bd handling fails, ignore large handling
@@ -845,7 +848,7 @@ onmessage = function (e) {
 				initDhBd(uid);
 
 				//wipe unused
-				prevBdKey=null;
+				prevBdKey="";
 
 				uid = btoa(nacl.secretbox(uid, UIDNONCE, gChannelKey));
 				if (!isEncryptedChannel) {
