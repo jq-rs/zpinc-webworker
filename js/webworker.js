@@ -88,6 +88,14 @@ let gDhDb = {};
 let gBdDb = {};
 let gBdAckDb = {};
 
+function utf8Decode(string) {
+	return decodeURIComponent(string);
+}
+
+function utf8Encode(utftext) {
+	return encodeURIComponent(utftext);
+}
+
 function createFlagstamp(valueofdate, weekstamp, timestamp) {
 	let begin = BEGIN;
 	let this_time = new Date(begin.valueOf() + weekstamp * 1000 * 60 * 60 * 24 * 7 + timestamp * 1000 * 60);
@@ -155,11 +163,9 @@ function StringToUint8(str) {
 
 function Uint8ToString(arr) {
 	let str = new String('');
-	if(!arr)
-		return str;
 	for (let i = 0; i < arr.length; i++) {
 		str += String.fromCharCode(arr[i]);
-	};
+	}
 	return str;
 }
 
@@ -530,7 +536,7 @@ function processOnMessageData(msg) {
 
 	let msgDate = readTimestamp(timeU16, weekU16, flagU16 & ALLISSET);
 
-	message = decrypted.slice(HDRLEN, msgsz);
+	message = utf8Decode(decrypted.slice(HDRLEN, msgsz));
 
 	let msgtype = 0;
 	if (flagU16 & ISFULL)
@@ -862,6 +868,8 @@ onmessage = function (e) {
 				let valueofdate = e.data[6];
 				let keysz = 0;
 
+				data = utf8Encode(data);
+
 				let nonce = new Uint8Array(32);
 				self.crypto.getRandomValues(nonce);
 
@@ -894,6 +902,7 @@ onmessage = function (e) {
 						flagstamp |= ISLAST;
 					}
 				}
+
 				const msgsz = data.length + HDRLEN;
 				let newmessage;
 				let encrypted;
@@ -962,7 +971,6 @@ onmessage = function (e) {
 					//ignore msg
 					break;
 				}
-
 
 				//version and msg size
 				newmessage = Uint16ValToString(msgsz);
