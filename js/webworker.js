@@ -850,9 +850,9 @@ onmessage = function (e) {
 				//wipe unused
 				prevBdKey="";
 
-				uid = btoa(nacl.secretbox(uid, UIDNONCE, gChannelKey));
+				uid = btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey)));
 				if (!isEncryptedChannel) {
-					bfchannel = nacl.secretbox(channel, CHANONCE, gChannelKey);
+					bfchannel = Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey));
 					channel = btoa(bfchannel);
 				}
 				// verify that we have already opened the channel earlier
