@@ -851,6 +851,8 @@ onmessage = function (e) {
 				prevBdKey="";
 
 				uid = btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey)));
+
+				let bfchannel;
 				if (!isEncryptedChannel) {
 					bfchannel = Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey));
 					channel = btoa(bfchannel);
