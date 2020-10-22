@@ -1017,7 +1017,7 @@ onmessage = function (e) {
 				} catch (err) {
 					break;
 				}
-				postMessage(["send", uid, channel, msgtype & MSGISMULTIPART ? true : false]);
+				postMessage(["send", utf8Decode(uid), utf8Decode(channel), msgtype & MSGISMULTIPART ? true : false]);
 			}
 			break;
 		case "close":
