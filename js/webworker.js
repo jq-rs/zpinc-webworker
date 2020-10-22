@@ -518,8 +518,8 @@ function processOnMessageData(msg) {
 		crypt = gMsgCryptKey;
 	}
 
-	let uid = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey));
-	let channel = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.channel)), CHANONCE, gChannelKey));
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey)));
+	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.channel)), CHANONCE, gChannelKey)));
 	let decrypted = Uint8ToString(nacl.secretbox.open(message, noncem.slice(0,24), crypt));
 
 	if (decrypted.length < HDRLEN) {
@@ -561,7 +561,7 @@ function processOnMessageData(msg) {
 	if (flagU16 & ISBDACK)
 		msgtype |= MSGISBDACK;
 
-	const myuid = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey));
+	const myuid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
 	if(myuid == uid) { //resync
 		initSid(myuid);
 	}
@@ -612,26 +612,26 @@ function msgEncode(obj) {
 
 function processOnClose() {
 	gWebSocket.close();
-	let uid = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey));
-	let channel = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey));
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
+	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey)));
 	postMessage(["close", uid, channel, gMyUid, gMyChannel]);
 }
 
 function processOnOpen() {
-	let uid = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey));
-	let channel = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey));
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
+	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey)));
 	postMessage(["init", uid, channel, gMyUid, gMyChannel]);
 }
 
 function processOnForwardSecrecy(bdKey) {
-	let uid = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey));
-	let channel = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey));
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
+	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey)));
 	postMessage(["forwardsecrecy", uid, channel, gMyUid, gMyChannel, bdKey.toString(16)]);
 }
 
 function processOnForwardSecrecyOff() {
-	let uid = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey));
-	let channel = Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey));
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
+	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey)));
 	postMessage(["forwardsecrecyoff", uid, channel, gMyUid, gMyChannel]);
 }
 
@@ -778,10 +778,10 @@ onmessage = function (e) {
 			{
 				gMyAddr = e.data[2];
 				gMyPort = e.data[3];
-				let uid = e.data[4];
-				let channel = e.data[5];
+				let uid = utf8Encode(e.data[4]);
+				let channel = utf8Encode(e.data[5]);
 				let passwd = StringToUint8(e.data[6]);
-				let isEncryptedChannel = e.data[7];
+				//let isEncryptedChannel = e.data[7];
 				let prevBdKey = e.data[8];
 
 				//salt
@@ -817,14 +817,7 @@ onmessage = function (e) {
 				wipe(messageKey);
 				prevBdKey = null;
 
-				let bfchannel;
-				if (!isEncryptedChannel) {
-					bfchannel = Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey));
-					gMyChannel = btoa(bfchannel);
-				}
-				else {
-					gMyChannel = channel;
-				}
+				gMyChannel = btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey)));
 				openSocket(gMyPort, gMyAddr);
 			}
 			break;
@@ -834,9 +827,9 @@ onmessage = function (e) {
 					break;
 				}
 
-				let uid = e.data[2];
-				let channel = e.data[3];
-				let isEncryptedChannel = e.data[4];
+				let uid = utf8Encode(e.data[2]);
+				let channel = utf8Encode(e.data[3]);
+				//let isEncryptedChannel = e.data[4];
 				let prevBdKey = e.data[5];
 
 				gMyDhKey.private = ristretto255.scalar.getRandom();
@@ -851,12 +844,8 @@ onmessage = function (e) {
 				prevBdKey="";
 
 				uid = btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey)));
+				channel = btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey)));
 
-				let bfchannel;
-				if (!isEncryptedChannel) {
-					bfchannel = Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey));
-					channel = btoa(bfchannel);
-				}
 				// verify that we have already opened the channel earlier
 				if (gMyUid === uid && gMyChannel === channel) {
 					openSocket(gMyPort, gMyAddr);
@@ -866,9 +855,9 @@ onmessage = function (e) {
 		case "send":
 		case "resend_prev":
 			{
-				let uid = e.data[2];
-				let channel = e.data[3];
-				let isEncryptedChannel = e.data[4];
+				let uid = utf8Encode(e.data[2]);
+				let channel = utf8Encode(e.data[3]);
+				//let isEncryptedChannel = e.data[4];
 				let msgtype = e.data[5];
 				let valueofdate = e.data[6];
 				let keysz = 0;
@@ -877,10 +866,6 @@ onmessage = function (e) {
 
 				let nonce = new Uint8Array(32);
 				self.crypto.getRandomValues(nonce);
-
-				if (isEncryptedChannel) {
-					channel = atob(Uint8ToString(nacl.secretbox.open(StringToUint8(channel), CHANONCE, gChannelKey)));
-				}
 
 				let weekstamp = createWeekstamp(valueofdate);
 				let timestamp = createTimestamp(valueofdate, weekstamp);
