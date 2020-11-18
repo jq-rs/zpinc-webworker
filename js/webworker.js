@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Copyright (c) 2019-2020 MlesTalk WebWorker developers
+ * Copyright (c) 2020 Zpinc developers
  */
 
 
@@ -194,11 +195,11 @@ function initBd(myuid) {
 	}
 }
 
-function initSid(myuid) {
+function initSid() {
 	gSidDb = {};
 	gMyDhKey.sid = null;
 	gMyDhKey.public = null;
-	gMyDhKey.group = null;
+	//gMyDhKey.group = null;
 	gMyDhKey.private = null;
 }
 
@@ -563,13 +564,15 @@ function processOnMessageData(msg) {
 
 	const myuid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
 	if(myuid == uid) { //resync
-		initSid(myuid);
+		initSid();
+		initDhBd(uid);
 	}
 	else if (uid != myuid) {
 		if (!gMyDhKey.sid || !isEqualSid(gMyDhKey.sid, sid)) {
-			initSid(myuid);
-			//console.log("RX: setting sid to " + sid + " mysid " + gMyDhKey.sid);
+			initSid();
+			initDhBd(myuid);
 			setSid(myuid, sid);
+			//console.log("RX: setting sid to " + sid + " mysid " + gMyDhKey.sid);
 			if (!(msgtype & MSGISPRESENCEACK)) {
 				msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
 			}
@@ -831,13 +834,14 @@ onmessage = function (e) {
 				let channel = utf8Encode(e.data[3]);
 				//let isEncryptedChannel = e.data[4];
 				let prevBdKey = e.data[5];
-
-				gMyDhKey.private = ristretto255.scalar.getRandom();
-				gMyDhKey.public = ristretto255.scalarMult(gMyDhKey.private, gMyDhKey.group);
 				if(prevBdKey) {
 					createPrevBd(prevBdKey, gChannelKey);
 				}
-				//update database
+				gMyDhKey.private = ristretto255.scalar.getRandom();
+				gMyDhKey.public = ristretto255.scalarMult(gMyDhKey.private, gMyDhKey.group);
+
+				//init databases
+				initSid();
 				initDhBd(uid);
 
 				//wipe unused
@@ -1017,15 +1021,16 @@ onmessage = function (e) {
 				} catch (err) {
 					break;
 				}
-				postMessage(["send", uid, channel, msgtype & MSGISMULTIPART ? true : false]);
+				postMessage(["send", utf8Decode(uid), utf8Decode(channel), msgtype & MSGISMULTIPART ? true : false]);
 			}
 			break;
 		case "close":
 			{
-				let uid = e.data[2];
+				let uid = utf8Encode(e.data[2]);
 				//let channel = e.data[3];
 				//let isEncryptedChannel = e.data[4];
 				gWebSocket.close();
+				initSid();
 				initDhBd(uid);
 				initPrevDhBd(uid);
 			}
