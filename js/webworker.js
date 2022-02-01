@@ -4,7 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * Copyright (c) 2019-2020 MlesTalk WebWorker developers
- * Copyright (c) 2020 Zpinc developers
+ * Copyright (c) 2020-2022 Zpinc developers
  */
 
 
