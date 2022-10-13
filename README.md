@@ -2,7 +2,7 @@
 
 !!! WARNING THIS SOURCE CODE IS PROTOTYPE ONLY, DO NOT USE IT !!!
 
-For more details, please check [Zpinc prototype protocol](zpinc_paper.pdf) article.
+For more details, please check [Zpinc article](zpinc_paper.pdf).
 
 Cryptography Notice
 
