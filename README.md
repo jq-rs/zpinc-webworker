@@ -1,6 +1,6 @@
 # zpinc-webworker
 
-!!! WARNING THIS SOURCE CODE IS PROTOTYPE ONLY, DO NOT USE IT !!!
+!!! WARNING THIS SOURCE CODE IS PROTOTYPE ONLY !!!
 
 For more details, please check [Zpinc article](zpinc_paper.pdf).
 
