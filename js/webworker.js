@@ -212,7 +212,7 @@ function setDhPublic(channel, myuid, sid) {
 	let cnt = 0;
 	let users = "";
 	for (let userid in siddb_sorted) {
-		console.log("Found sid " +  gSidDb[channel][userid] + " for user " + userid);
+		//console.log("Found sid " +  gSidDb[channel][userid] + " for user " + userid);
 		if(!isEqualSid(gSidDb[channel][userid], sid)) {
 			pubok = false;
 			break;
@@ -248,7 +248,7 @@ function bdSetZeroes() {
 	return Uint8ToString(bdin);
 }
 
-const BDDEBUG = true;
+const BDDEBUG = false;
 function processBd(channel, myuid, uid, msgtype, message) {
 	let init = false;
 
@@ -398,7 +398,7 @@ function processBd(channel, myuid, uid, msgtype, message) {
 						let key = createMessageKey(rnd.digest());
 
 						gMyDhKey[channel].bdMsgCryptKey = key;
-						console.log("Created key msg crypt! " + key)
+						//console.log("Created key msg crypt! " + key)
 
 						//wipe unused
 						wipe(rnd);
@@ -421,12 +421,14 @@ function processBd(channel, myuid, uid, msgtype, message) {
 							let bdcnt = Object.keys(gBdDb[channel]).length;
 							let ackcnt = Object.keys(gBdAckDb[channel]).length;
 							//ack received from everyone else?
-							console.log("Ackcnt " + ackcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
+							if (BDDEBUG)
+								console.log("Ackcnt " + ackcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
 							if (pubcnt == bdcnt && ackcnt == pubcnt &&
 								(message.length == DH_BITS/8 && (msgtype & MSGISBDACK) && (msgtype & MSGISBDONE) && pubcnt == 2 ||
 								 message.length == 2 * (DH_BITS/8) && (msgtype & MSGISBDACK) && pubcnt > 2)) {
 
-								console.log("Ack count matches to pub&bdcnt, enabling send encryption!");
+								if (BDDEBUG)
+									console.log("Ack count matches to pub&bdcnt, enabling send encryption!");
 								gMyDhKey[channel].secretAcked = true;
 							}
 						}
@@ -498,7 +500,6 @@ function processOnMessageData(channel, msg) {
 		blakehmac.update(hmacarr);
 		let rhmac = blakehmac.digest();
 		if (false == isEqualHmacs(hmac, rhmac)) {
-			console.log("Dropping");
 			return;
 		}
 		crypt = gMsgCryptKey[channel];
@@ -509,7 +510,6 @@ function processOnMessageData(channel, msg) {
 	let decrypted = Uint8ToString(nacl.secretbox.open(message, noncem.slice(0,24), crypt));
 
 	if (decrypted.length < HDRLEN) {
-		console.log("Dropping 2");
 		return;
 	}
 
@@ -566,7 +566,7 @@ function processOnMessageData(channel, msg) {
 		if(!gSidDb[channel][uid]) {
 			gSidDb[channel][uid] = sid;
 			if(gMyDhKey[channel].public) {
-				console.log("Resetting public key for sid " + sid);
+				//console.log("Resetting public key for sid " + sid);
 				setDhPublic(channel, myuid, sid);
 			}
 		}
@@ -923,7 +923,8 @@ onmessage = function (e) {
 						let pub = Uint8ToString(gMyDhKey[channel].public);
 						keysz += pub.length;
 						data += pub;
-						console.log("TX: Adding pub key");
+						if (BDDEBUG)
+							console.log("TX: Adding pub key");
 					}
 					else {
 						//console.log("TX: Pub key is null!");
@@ -934,24 +935,27 @@ onmessage = function (e) {
 						let sidcnt = Object.keys(gSidDb[channel]).length;
 						if(bdIsZeroes(gMyDhKey[channel].bd)) {
 							if (sidcnt == 2) {
-								console.log("Adding ISDBONE flag");
+								if (BDDEBUG)
+									console.log("Adding ISDBONE flag");
 								flagstamp |= ISBDONE;
 								padlen += DH_BITS/8;
 							}
 						}
 						else {
 							let bd = Uint8ToString(gMyDhKey[channel].bd);
-							console.log("TX: Bd");
+							if (BDDEBUG)
+								console.log("TX: Bd");
 							keysz += bd.length;
 							data += bd;
 						}
 						let pubcnt = Object.keys(gDhDb[channel]).length;
 						let bdcnt = Object.keys(gBdDb[channel]).length;
-						console.log("During send sidcnt " + sidcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
+						if (BDDEBUG)
+							console.log("During send sidcnt " + sidcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
 						if (sidcnt == pubcnt && pubcnt == bdcnt && gMyDhKey[channel].secret != null) {
 							flagstamp |= ISBDACK;
 							if (gBdAckDb[channel][uid] == null) {
-								console.log("Adding self to bdack db");
+								//console.log("Adding self to bdack db");
 								gBdAckDb[channel][uid] = true;
 							}
 						}
