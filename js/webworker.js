@@ -506,7 +506,6 @@ function processOnMessageData(channel, msg) {
 	}
 
 	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey[channel])));
-	//let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.channel)), CHANONCE, gChannelKey[channel])));
 	let decrypted = Uint8ToString(nacl.secretbox.open(message, noncem.slice(0,24), crypt));
 
 	if (decrypted.length < HDRLEN) {
@@ -580,7 +579,7 @@ function processOnMessageData(channel, msg) {
 		msgtype = processBd(channel, myuid, uid, msgtype, keystr);
 	}
 
-	postMessage(["data", uid, channel, msgDate.valueOf(), message, msgtype, fsEnabled]);
+	postMessage(["data", uid, utf8Decode(channel), msgDate.valueOf(), message, msgtype, fsEnabled]);
 }
 
 function msgDecode(data) {
@@ -602,7 +601,7 @@ function msgEncode(obj) {
 function processOnClose(channel) {
 	gWebSocket[channel].close();
 	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
-	postMessage(["close", uid, channel]);
+	postMessage(["close", uid, utf8Decode(channel)]);
 }
 
 function processOnOpen(channel, reopen) {
@@ -612,21 +611,21 @@ function processOnOpen(channel, reopen) {
 
 	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
 	if(false == reopen) {
-		postMessage(["init", uid, channel]);
+		postMessage(["init", uid, utf8Decode(channel)]);
 	}
 	else {
-		postMessage(["resync", uid, channel]);
+		postMessage(["resync", uid, utf8Decode(channel)]);
 	}
 }
 
 function processOnForwardSecrecy(channel, bdKey) {
 	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
-	postMessage(["forwardsecrecy", uid, channel, bdKey.toString(16)]);
+	postMessage(["forwardsecrecy", uid, utf8Decode(channel), bdKey.toString(16)]);
 }
 
 function processOnForwardSecrecyOff(channel) {
 	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
-	postMessage(["forwardsecrecyoff", uid, channel]);
+	postMessage(["forwardsecrecyoff", uid, utf8Decode(channel)]);
 }
 
 function isSocketOpen(channel) {
@@ -1047,7 +1046,7 @@ onmessage = function (e) {
 		case "close":
 			{
 				let uid = utf8Encode(e.data[2]);
-				let channel = e.data[3];
+				let channel = utf8Encode(e.data[3]);
 				gWebSocket[channel].close();
 				initSid(channel);
 				initDhBd(channel, uid);
