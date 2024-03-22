@@ -3,22 +3,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * Copyright (c) 2019-2020 MlesTalk WebWorker developers
+ * Copyright (c) 2019-2020, 2024 MlesTalk WebWorker developers
  * Copyright (c) 2020-2022 Zpinc developers
  */
 
 
 importScripts('cbor.js', 'blake2b.js', 'scrypt-async.js', 'nacl.js', 'ristretto255.js', 'wipe.js', 'int.js', 'binary.js');
 
-let gWebSocket;
-let gMyAddr;
-let gMyPort;
-let gMyUid;
-let gMyChannel;
-let gChannelKey;
-let gMsgCryptKey;
+let gWebSocket = {};
+let gMyAddr = {};
+let gMyPort = {};
+let gMyUid = {};
+let gMyChannel = {};
+let gChannelKey = {};
+let gMsgCryptKey = {};
 const ISFULL = 0x8000
-const ISIMAGE = 0x4000;
+const ISDATA = 0x4000;
 const ISPRESENCE = 0x2000;
 const ISPRESENCEACK = 0x1000;
 const ISMULTI = 0x800;
@@ -33,6 +33,7 @@ const NONCE_LEN = 32;
 const DOMAIN_ENCKEY = StringToUint8("Zpinc-WebWorkerEncryptDom!v1");
 const DOMAIN_CHANKEY = StringToUint8("Zpinc-WebWorkerChannelDom!v1");
 const DOMAIN_AUTHKEY = StringToUint8("Zpinc-WebWorkerAuthDom!v1");
+
 /* For static uid and channel we use static nonces */
 const UIDNONCE = new Uint8Array([ 2,   3,   5,   7,  11,  13,  17,  19,
 								 23,  29,  31,  37,  41,  43,  47,  53,
@@ -48,14 +49,14 @@ const HDRLEN = 18;
 /* Msg type flags */
 const MSGISFULL =         0x1;
 const MSGISPRESENCE =    (0x1 << 1);
-const MSGISIMAGE =       (0x1 << 2);
+const MSGISDATA =        (0x1 << 2);
 const MSGISMULTIPART =   (0x1 << 3);
 const MSGISFIRST =       (0x1 << 4);
 const MSGISLAST =        (0x1 << 5);
 const MSGISPRESENCEACK = (0x1 << 6);
 const MSGPRESACKREQ =    (0x1 << 7);
 const MSGISBDONE =       (0x1 << 8);
-const MSGISBDACK =		 (0x1 << 9);
+const MSGISBDACK =	 (0x1 << 9);
 
 let SEED;
 
@@ -67,23 +68,7 @@ const SCRYPT_DKLEN = 32;
 
 const DH_BITS = 256; //32 bytes
 
-let gMyDhKey = {
-	pw: null,
-	bdpw: null,
-	sid: null,
-	group: null,
-	private: null,
-	public: null,
-	bd: null,
-	secret: null,
-	secretAcked: false,
-	bdMsgCryptKey: null,
-	bdChannelKey: null,
-	prevBdMsgCryptKey: null,
-	prevBdChannelKey: null,
-	fsInformed: false
-};
-
+let gMyDhKey = {};
 let gSidDb = {};
 let gDhDb = {};
 let gBdDb = {};
@@ -183,52 +168,52 @@ function Uint16ValToString(val) {
 	return str;
 }
 
-function initBd(myuid) {
-	gBdDb = {};
-	gBdAckDb = {};
-	gMyDhKey.secret = null;
-	gMyDhKey.secretAcked = false;
-	gMyDhKey.bd = null;
-	if (gMyDhKey.fsInformed) {
-		processOnForwardSecrecyOff();
-		gMyDhKey.fsInformed = false;
+function initBd(channel, myuid) {
+	gBdDb[channel] = {};
+	gBdAckDb[channel] = {};
+	gMyDhKey[channel].secret = null;
+	gMyDhKey[channel].secretAcked = false;
+	gMyDhKey[channel].bd = null;
+	if (gMyDhKey[channel].fsInformed) {
+		processOnForwardSecrecyOff(channel);
+		gMyDhKey[channel].fsInformed = false;
 	}
 }
 
-function initSid() {
-	gSidDb = {};
-	gMyDhKey.sid = null;
-	gMyDhKey.public = null;
-	//gMyDhKey.group = null;
-	gMyDhKey.private = null;
+function initSid(channel) {
+	gSidDb[channel] = {};
+	gMyDhKey[channel].sid = null;
+	gMyDhKey[channel].public = null;
+	gMyDhKey[channel].group = null;
+	gMyDhKey[channel].private = null;
 }
 
-function initDhBd(myuid) {
-	gDhDb = {};
-	gBdDb = {};
-	gBdAckDb = {};
-	if (gMyDhKey.public) {
-		gDhDb[myuid] = Uint8ToString(gMyDhKey.public);
+function initDhBd(channel, myuid) {
+	gDhDb[channel] = {};
+	gBdDb[channel] = {};
+	gBdAckDb[channel] = {};
+	if (gMyDhKey[channel].public) {
+		gDhDb[channel][myuid] = Uint8ToString(gMyDhKey[channel].public);
 	}
-	gMyDhKey.secret = null;
-	gMyDhKey.secretAcked = false;
-	gMyDhKey.bd = null;
-	gMyDhKey.bdMsgCryptKey = null;
-	if (gMyDhKey.fsInformed) {
-		processOnForwardSecrecyOff();
-		gMyDhKey.fsInformed = false;
+	gMyDhKey[channel].secret = null;
+	gMyDhKey[channel].secretAcked = false;
+	gMyDhKey[channel].bd = null;
+	gMyDhKey[channel].bdMsgCryptKey = null;
+	if (gMyDhKey[channel].fsInformed) {
+		processOnForwardSecrecyOff(channel);
+		gMyDhKey[channel].fsInformed = false;
 	}
 }
 
-function setDhPublic(myuid, sid) {
-	let siddb_sorted = Object.fromEntries(Object.entries(gSidDb).sort());
+function setDhPublic(channel, myuid, sid) {
+	let siddb_sorted = Object.fromEntries(Object.entries(gSidDb[channel]).sort());
 
 	let pubok = true;
 	let cnt = 0;
 	let users = "";
 	for (let userid in siddb_sorted) {
-		//console.log("Found sid " +  gSidDb[userid] + " for user " + userid);
-		if(!isEqualSid(gSidDb[userid], sid)) {
+		console.log("Found sid " +  gSidDb[channel][userid] + " for user " + userid);
+		if(!isEqualSid(gSidDb[channel][userid], sid)) {
 			pubok = false;
 			break;
 		}
@@ -242,17 +227,17 @@ function setDhPublic(myuid, sid) {
 		const userarr = StringToUint8(users);
 		let arr = new Uint8Array(userarr.byteLength);
 		arr.set(userarr, 0);
-		const digest64B = new BLAKE2b(64, { salt: sid16, personalization: PERBDSTR, key: gMsgCryptKey });
-		gMyDhKey.group = ristretto255.fromHash(digest64B.digest());
-		gMyDhKey.private = ristretto255.scalar.getRandom();
-		gMyDhKey.public = ristretto255.scalarMult(gMyDhKey.private, gMyDhKey.group);
-		gDhDb[myuid] = Uint8ToString(gMyDhKey.public);
+		const digest64B = new BLAKE2b(64, { salt: sid16, personalization: PERBDSTR, key: gMsgCryptKey[channel] });
+		gMyDhKey[channel].group = ristretto255.fromHash(digest64B.digest());
+		gMyDhKey[channel].private = ristretto255.scalar.getRandom();
+		gMyDhKey[channel].public = ristretto255.scalarMult(gMyDhKey[channel].private, gMyDhKey[channel].group);
+		gDhDb[channel][myuid] = Uint8ToString(gMyDhKey[channel].public);
 	}
 }
 
-function initPrevDhBd(myuid) {
-	gMyDhKey.prevBdChannelKey = null;
-	gMyDhKey.prevBdMsgCryptKey = null;
+function initPrevDhBd(channel, myuid) {
+	gMyDhKey[channel].prevBdChannelKey = null;
+	gMyDhKey[channel].prevBdMsgCryptKey = null;
 }
 
 function bdSetZeroes() {
@@ -263,58 +248,55 @@ function bdSetZeroes() {
 	return Uint8ToString(bdin);
 }
 
-const BDDEBUG = false;
-function processBd(myuid, uid, msgtype, message) {
+const BDDEBUG = true;
+function processBd(channel, myuid, uid, msgtype, message) {
 	let init = false;
 
 	if(uid == myuid) {  //received own message, init due to resyncing
-		initDhBd(myuid);
+		initDhBd(channel, myuid);
 		init = true;
 	}
 	else if (message.length == DH_BITS/8 || message.length == 2 * (DH_BITS/8)) {
 		if(BDDEBUG)
 			console.log("Got " + uid + " public+bd key, len " + message.length);
 
-		if (message.length == DH_BITS/8 && !(msgtype & MSGISBDONE) && !(msgtype & MSGISBDACK)) {
-			if (!(msgtype & MSGISPRESENCEACK)) {
+		if (message.length == DH_BITS/8 && 0 == (msgtype & MSGISBDONE) && 0 == (msgtype & MSGISBDACK)) {
+			if ((msgtype & MSGISPRESENCE) && 0 == (msgtype & MSGISPRESENCEACK)) {
 				msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
+				if(BDDEBUG)
+					console.log("Request presence ack for " + myuid + "@" + channel);
 			}
-			//if(BDDEBUG)
-			//	console.log("!!! bd invalidated in short message !!!");
-			initBd(myuid);
+			if(BDDEBUG)
+				console.log("!!! bd invalidated in short message !!!");
+			initBd(channel, myuid);
 		}
 
 		let pub = message.substring(0, DH_BITS/8);
-		if (null == gDhDb[uid]) {
-			gDhDb[uid] = pub;
+		if (null == gDhDb[channel][uid]) {
+			gDhDb[channel][uid] = pub;
 		}
-		else if (gDhDb[uid] != pub) {
-			initDhBd(myuid);
-			if(BDDEBUG)
-				console.log("!!! skey invalidated in mismatching dh!!!");
-			gDhDb[uid] = pub;
-			init = true;
-		}
-		else if (message.length == DH_BITS/8 && !(msgtype & MSGISBDONE) && gDhDb[uid] && gBdDb[uid]) {
-			initDhBd(myuid);
+		else if (message.length == DH_BITS/8 && 0 == (msgtype & MSGISBDONE) && gDhDb[channel][uid] && gBdDb[channel][uid]) {
+			initDhBd(channel, myuid);
 			if(BDDEBUG)
 				console.log("!!! skey invalidated in short message as with existing bd!!!");
-			gDhDb[uid] = pub;
+			gDhDb[channel][uid] = pub;
 			init = true;
 		}
-		else if(!init) {
+		else if(false == init) {
 			//calculate bd key
+			if(!gBdDb[channel])
+				gBdDb[channel] = {};
 			let prevkey = null;
 			let nextkey = null;
 			let index = 0;
 			let pubcnt = 0;
-			let dhdb_sorted = Object.fromEntries(Object.entries(gDhDb).sort());
+			let dhdb_sorted = Object.fromEntries(Object.entries(gDhDb[channel]).sort());
 			let keys = [];
 			for (let userid in dhdb_sorted) {
 				if (userid == myuid) {
 					index = pubcnt;
 				}
-				keys.push(StringToUint8(gDhDb[userid]));
+				keys.push(StringToUint8(gDhDb[channel][userid]));
 				pubcnt++;
 			}
 
@@ -333,12 +315,12 @@ function processBd(myuid, uid, msgtype, message) {
 			}
 			if (prevkey && nextkey) {
 				let step = ristretto255.sub(nextkey, prevkey);
-				gMyDhKey.bd = ristretto255.scalarMult(gMyDhKey.private, step);
-				//console.log("Setting Bd " + gMyDhKey.bd);
-				gBdDb[myuid] = Uint8ToString(gMyDhKey.bd);
+				gMyDhKey[channel].bd = ristretto255.scalarMult(gMyDhKey[channel].private, step);
+				//console.log("Setting Bd " + gMyDhKey[channel].bd);
+				gBdDb[channel][myuid] = Uint8ToString(gMyDhKey[channel].bd);
 			}
 
-			if (message.length == 2 * (DH_BITS/8) || (message.length == DH_BITS/8 && msgtype & MSGISBDONE)) {
+			if (message.length == 2 * (DH_BITS/8) || (message.length == DH_BITS/8 && (msgtype & MSGISBDONE))) {
 				let bd = bdSetZeroes();
 				let len = 0;
 				if (message.length == 2 * (DH_BITS/8))
@@ -347,46 +329,46 @@ function processBd(myuid, uid, msgtype, message) {
 				if(len)
 					bd = message.substring(DH_BITS/8, len);
 
-				if (gBdDb[uid] != null && gBdDb[uid] != bd) {
+				if (gBdDb[channel][uid] != null && gBdDb[channel][uid] != bd) {
 					//start again
-					initBd(myuid);
+					initBd(channel, myuid);
 					if(BDDEBUG)
 						console.log("!!! skey invalidated in mismatching bd !!!");
-					gDhDb[uid] = pub;
-					init = true;
-
+					gDhDb[channel][uid] = pub;
 				}
-				else if (pubcnt > 2 && bdIsZeroes(StringToUint8(bd)) || pubcnt == 2 && !bdIsZeroes(StringToUint8(bd))) {
-					initDhBd(myuid);
+				else if ((pubcnt > 2 && bdIsZeroes(StringToUint8(bd))) || (pubcnt == 2 && !bdIsZeroes(StringToUint8(bd)))) {
+					initDhBd(channel, myuid);
 					if(BDDEBUG)
-						console.log("!!! skey invalidated in mismatching bd length!!! pubcnt " + pubcnt + " bd " + bd);
-					gDhDb[uid] = pub;
-					if (!(msgtype & MSGISPRESENCEACK)) {
+						console.log("!!! skey invalidated in mismatching bd length!!! pubcnt " + pubcnt);
+					gDhDb[channel][uid] = pub;
+					if ((msgtype & MSGISPRESENCE) && 0 == (msgtype & MSGISPRESENCEACK)) {
 						msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
+						if(BDDEBUG)
+							console.log("Request presence ack for " + myuid + "@" + channel);
 					}
 					init = true;
 				}
-				else if (gBdDb[uid] == bd) {
+				else if (gBdDb[channel][uid] == bd) {
 					//BD matches, do nothing
 				}
 				else {
-					gBdDb[uid] = bd;
+					gBdDb[channel][uid] = bd;
 
 					let bdcnt = 0;
 					let xkeys = [];
-					let bddb_sorted = Object.fromEntries(Object.entries(gBdDb).sort());
+					let bddb_sorted = Object.fromEntries(Object.entries(gBdDb[channel]).sort());
 					for (let userid in bddb_sorted) {
 						if (userid == myuid) {
 							index = bdcnt;
 						}
-						xkeys.push(StringToUint8(gBdDb[userid]));
+						xkeys.push(StringToUint8(gBdDb[channel][userid]));
 						bdcnt++;
 					}
 
 					if (bdcnt == pubcnt) {
 						//multiply by len
 						const len = xkeys.length;
-						let skey = ristretto255.scalarMult(gMyDhKey.private, prevkey);
+						let skey = ristretto255.scalarMult(gMyDhKey[channel].private, prevkey);
 						let step = skey;
 
 						for (let j = 0; j < len - 1; j++)
@@ -407,16 +389,16 @@ function processBd(myuid, uid, msgtype, message) {
 						//console.log("Skey " + skey);
 
 						//console.log("!!! My skey " + skey.toString(16) + " !!!");
-						gMyDhKey.secret = skey;
+						gMyDhKey[channel].secret = skey;
 
-						let rnd = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: gChannelKey});
-						rnd.update(StringToUint8(gMyDhKey.secret.toString(16)));
+						let rnd = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: gChannelKey[channel]});
+						rnd.update(StringToUint8(gMyDhKey[channel].secret.toString(16)));
 
-						gMyDhKey.bdChannelKey = createChannelKey(rnd.digest());
+						gMyDhKey[channel].bdChannelKey = createChannelKey(rnd.digest());
 						let key = createMessageKey(rnd.digest());
 
-						gMyDhKey.bdMsgCryptKey = key;
-						//console.log("Created key msg crypt! " + key)
+						gMyDhKey[channel].bdMsgCryptKey = key;
+						console.log("Created key msg crypt! " + key)
 
 						//wipe unused
 						wipe(rnd);
@@ -424,34 +406,36 @@ function processBd(myuid, uid, msgtype, message) {
 					}
 				}
 				//if bd handling fails, ignore large handling
-				if (!init && (message.length == DH_BITS/8 && msgtype & MSGISBDACK) || message.length == 2 * (DH_BITS/8)) {
-					if (gMyDhKey.secretAcked) {
+				if (false == init && ((message.length == DH_BITS/8 && msgtype & MSGISBDACK) || message.length == 2 * (DH_BITS/8))) {
+					if (gMyDhKey[channel].secretAcked) {
 						//do nothing, already acked
 						//console.log("Nothing to do, already acked");
 					}
 					else {
+						if(!gBdAckDb[channel])
+							gBdAckDb[channel] = {};
 						//check first that pub and bd are ok
-						if (gDhDb[uid] && gBdDb[uid]) {
-							gBdAckDb[uid] = true;
-							let pubcnt = Object.keys(gDhDb).length;
-							let bdcnt = Object.keys(gBdDb).length;
-							let ackcnt = Object.keys(gBdAckDb).length;
+						if (gDhDb[channel][uid] && gBdDb[channel][uid]) {
+							gBdAckDb[channel][uid] = true;
+							let pubcnt = Object.keys(gDhDb[channel]).length;
+							let bdcnt = Object.keys(gBdDb[channel]).length;
+							let ackcnt = Object.keys(gBdAckDb[channel]).length;
 							//ack received from everyone else?
-							//console.log("Ackcnt " + ackcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
+							console.log("Ackcnt " + ackcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
 							if (pubcnt == bdcnt && ackcnt == pubcnt &&
-								(message.length == DH_BITS/8 && msgtype & MSGISBDACK && msgtype & MSGISBDONE && pubcnt == 2 ||
-								 message.length == 2 * (DH_BITS/8) && msgtype & MSGISBDACK && pubcnt > 2)) {
+								(message.length == DH_BITS/8 && (msgtype & MSGISBDACK) && (msgtype & MSGISBDONE) && pubcnt == 2 ||
+								 message.length == 2 * (DH_BITS/8) && (msgtype & MSGISBDACK) && pubcnt > 2)) {
 
-								//console.log("Ack count matches to pub&bdcnt, enabling send encryption!");
-								gMyDhKey.secretAcked = true;
+								console.log("Ack count matches to pub&bdcnt, enabling send encryption!");
+								gMyDhKey[channel].secretAcked = true;
 							}
 						}
 						else {
 							//start again
-							initDhBd(myuid);
+							initBd(channel, myuid);
 							if(BDDEBUG)
 								console.log("!!! bds invalidated in ack !!!");
-							gDhDb[uid] = pub;
+							gDhDb[channel][uid] = pub;
 						}
 					}
 				}
@@ -461,7 +445,7 @@ function processBd(myuid, uid, msgtype, message) {
 	return msgtype;
 }
 
-function processOnMessageData(msg) {
+function processOnMessageData(channel, msg) {
 	//sanity
 	if (msg.message.byteLength <= NONCE_LEN || msg.message.byteLength > 0xffffff) {
 		return;
@@ -481,49 +465,51 @@ function processOnMessageData(msg) {
 	let crypt; //selected crypt object
 
 	//try all three options
-	if(gMyDhKey.bdMsgCryptKey) {
-		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gMyDhKey.bdChannelKey });
+	if(gMyDhKey[channel].bdMsgCryptKey) {
+		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gMyDhKey[channel].bdChannelKey });
 		blakehmac.update(DOMAIN_AUTHKEY);
 		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
 		let rhmac = blakehmac.digest();
 		if (true == isEqualHmacs(hmac, rhmac)) {
 			hmacok = true;
-			crypt = gMyDhKey.bdMsgCryptKey;
+			crypt = gMyDhKey[channel].bdMsgCryptKey;
 			//console.log("Current crypt matches");
 			fsEnabled = true;
 		}
 	}
-	if(!hmacok && gMyDhKey.prevBdMsgCryptKey) {
-		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gMyDhKey.prevBdChannelKey });
+	if(!hmacok && gMyDhKey[channel].prevBdMsgCryptKey) {
+		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gMyDhKey[channel].prevBdChannelKey });
 		blakehmac.update(DOMAIN_AUTHKEY);
 		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
 		let rhmac = blakehmac.digest();
 		if (true == isEqualHmacs(hmac, rhmac)) {
 			hmacok = true;
-			crypt = gMyDhKey.prevBdMsgCryptKey;
+			crypt = gMyDhKey[channel].prevBdMsgCryptKey;
 			//console.log("Prev crypt matches");
 			fsEnabled = true;
 		}
 	}
 	if(!hmacok) {
-		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gChannelKey });
+		let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: gChannelKey[channel] });
 		blakehmac.update(DOMAIN_AUTHKEY);
 		blakehmac.update(noncem.slice(24));
 		blakehmac.update(hmacarr);
 		let rhmac = blakehmac.digest();
 		if (false == isEqualHmacs(hmac, rhmac)) {
+			console.log("Dropping");
 			return;
 		}
-		crypt = gMsgCryptKey;
+		crypt = gMsgCryptKey[channel];
 	}
 
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey)));
-	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.channel)), CHANONCE, gChannelKey)));
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey[channel])));
+	//let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.channel)), CHANONCE, gChannelKey[channel])));
 	let decrypted = Uint8ToString(nacl.secretbox.open(message, noncem.slice(0,24), crypt));
 
 	if (decrypted.length < HDRLEN) {
+		console.log("Dropping 2");
 		return;
 	}
 
@@ -545,8 +531,8 @@ function processOnMessageData(msg) {
 	let msgtype = 0;
 	if (flagU16 & ISFULL)
 		msgtype |= MSGISFULL;
-	if (flagU16 & ISIMAGE)
-		msgtype |= MSGISIMAGE;
+	if (flagU16 & ISDATA)
+		msgtype |= MSGISDATA;
 	if (flagU16 & ISPRESENCE)
 		msgtype |= MSGISPRESENCE;
 	if (flagU16 & ISPRESENCEACK)
@@ -562,36 +548,36 @@ function processOnMessageData(msg) {
 	if (flagU16 & ISBDACK)
 		msgtype |= MSGISBDACK;
 
-	const myuid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
+	const myuid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
 	if(myuid == uid) { //resync
-		initSid();
-		initDhBd(uid);
+		initSid(channel);
+		initDhBd(channel, uid);
 	}
 	else if (uid != myuid) {
-		if (!gMyDhKey.sid || !isEqualSid(gMyDhKey.sid, sid)) {
-			initSid();
-			initDhBd(myuid);
-			setSid(myuid, sid);
-			//console.log("RX: setting sid to " + sid + " mysid " + gMyDhKey.sid);
+		if (!gMyDhKey[channel].sid || !isEqualSid(gMyDhKey[channel].sid, sid)) {
+			initSid(channel);
+			initDhBd(channel, myuid);
+			setSid(channel, myuid, sid);
+			//console.log("RX: setting sid to " + sid + " mysid " + gMyDhKey[channel].sid);
 			if (!(msgtype & MSGISPRESENCEACK)) {
 				msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
 			}
 		}
-		if(!gSidDb[uid]) {
-			gSidDb[uid] = sid;
-			if(gMyDhKey.public) {
-				//console.log("Resetting public key for sid " + sid + " cnt " + cnt);
-				setDhPublic(myuid, sid);
+		if(!gSidDb[channel][uid]) {
+			gSidDb[channel][uid] = sid;
+			if(gMyDhKey[channel].public) {
+				console.log("Resetting public key for sid " + sid);
+				setDhPublic(channel, myuid, sid);
 			}
 		}
-		else if(isEqualSid(gSidDb[uid], sid) && !gMyDhKey.public) {
-			setDhPublic(myuid, sid);
+		else if(isEqualSid(gSidDb[channel][uid], sid) && !gMyDhKey[channel].public) {
+			setDhPublic(channel, myuid, sid);
 		}
 	}
 
-	if(gMyDhKey.public && keysz > 0) {
+	if(gMyDhKey[channel].public && keysz > 0) {
 		const keystr = decrypted.slice(msgsz, msgsz+keysz);
-		msgtype = processBd(myuid, uid, msgtype, keystr);
+		msgtype = processBd(channel, myuid, uid, msgtype, keystr);
 	}
 
 	postMessage(["data", uid, channel, msgDate.valueOf(), message, msgtype, fsEnabled]);
@@ -613,66 +599,75 @@ function msgEncode(obj) {
 	}
 }
 
-function processOnClose() {
-	gWebSocket.close();
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
-	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey)));
-	postMessage(["close", uid, channel, gMyUid, gMyChannel]);
+function processOnClose(channel) {
+	gWebSocket[channel].close();
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	postMessage(["close", uid, channel]);
 }
 
-function processOnOpen() {
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
-	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey)));
-	postMessage(["init", uid, channel, gMyUid, gMyChannel]);
+function processOnOpen(channel, reopen) {
+	//send mlesv2 init
+	let join = '{"uid":"' + gMyUid[channel] + '","channel":"' + gMyChannel[channel] + '"}';
+	gWebSocket[channel].send(join);
+
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	if(false == reopen) {
+		postMessage(["init", uid, channel]);
+	}
+	else {
+		postMessage(["resync", uid, channel]);
+	}
 }
 
-function processOnForwardSecrecy(bdKey) {
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
-	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey)));
-	postMessage(["forwardsecrecy", uid, channel, gMyUid, gMyChannel, bdKey.toString(16)]);
+function processOnForwardSecrecy(channel, bdKey) {
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	postMessage(["forwardsecrecy", uid, channel, bdKey.toString(16)]);
 }
 
-function processOnForwardSecrecyOff() {
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid)), UIDNONCE, gChannelKey)));
-	let channel = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyChannel)), CHANONCE, gChannelKey)));
-	postMessage(["forwardsecrecyoff", uid, channel, gMyUid, gMyChannel]);
+function processOnForwardSecrecyOff(channel) {
+	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	postMessage(["forwardsecrecyoff", uid, channel]);
 }
 
-function isSocketOpen() {
-	if (gWebSocket !== undefined && gWebSocket.readyState == WebSocket.OPEN) {
+function isSocketOpen(channel) {
+	if (gWebSocket[channel] !== undefined && gWebSocket[channel].readyState == WebSocket.OPEN) {
 		return true;
 	}
 	return false;
 }
 
-function openSocket(gMyPort, gMyAddr) {
-	if (isSocketOpen()) {
+function openSocket(channel, port, addr, reopen = false) {
+	if (isSocketOpen(channel) && false == reopen) {
 		return;
 	}
 
-	gWebSocket = new WebSocket("wss://" + gMyAddr + ":" + gMyPort, "mles-websocket");
-	gWebSocket.binaryType = "arraybuffer";
-	gWebSocket.onopen = function (event) {
-		let ret = processOnOpen();
+	if (gWebSocket[channel] !== undefined) {
+		gWebSocket[channel].close();
+	}
+
+	gWebSocket[channel] = new WebSocket("wss://" + addr + ":" + port, "mles-websocket");
+	gWebSocket[channel].binaryType = "arraybuffer";
+	gWebSocket[channel].onopen = function (event) {
+		let ret = processOnOpen(channel, reopen);
 		if(ret < 0)
 			console.log("Process on open failed: " + ret);
 
 	};
 
-	gWebSocket.onmessage = function (event) {
+	gWebSocket[channel].onmessage = function (event) {
 		if (event.data) {
 			let msg = msgDecode(event.data);
 			if(!msg)
 				return;
 
-			let ret = processOnMessageData(msg);
+			let ret = processOnMessageData(channel, msg);
 			if(ret < 0)
 				console.log("Process on message data failed: " + ret);
 		}
 	};
 
-	gWebSocket.onclose = function (event) {
-		let ret = processOnClose();
+	gWebSocket[channel].onclose = function (event) {
+		let ret = processOnClose(channel);
 		if(ret < 0)
 			console.log("Process on close failed: " + ret)
 	};
@@ -709,17 +704,19 @@ function padme(msgsize) {
 	return (L + bitMask) & ~bitMask;
 }
 
-function createPrevBd(prevBdKey, channelKey) {
+function createPrevBd(channel, prevBdKey, channelKey) {
 	let rnd = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: channelKey });
 	rnd.update(StringToUint8(prevBdKey));
 
 	//console.log("Setting prev channel key and crypt");
-	gMyDhKey.prevBdChannelKey = createChannelKey(rnd.digest());
+	gMyDhKey[channel].prevBdChannelKey = createChannelKey(rnd.digest());
 	let key = createMessageKey(rnd.digest());
-	gMyDhKey.prevBdMsgCryptKey = key;
+	gMyDhKey[channel].prevBdMsgCryptKey = key;
 }
 
 function bdIsZeroes(bd) {
+	if (null == bd)
+		return false;
 	for(let i = 0; i < bd.length; i++) {
 		if(bd[i] != 0)
 			return false;
@@ -755,21 +752,23 @@ function pseudoRandBytes(byteLength) {
 	return buf;
 }
 
-function getSid(myuid) {
-	if (null == gMyDhKey.sid) {
+function getSid(channel, myuid) {
+	if (null == gMyDhKey[channel].sid) {
 		let sid = new Uint8Array(8);
 		self.crypto.getRandomValues(sid);
-		setSid(myuid, sid);
+		if (null == gSidDb[channel])
+			initSid(channel);
+		setSid(channel, myuid, sid);
 	}
-	//console.log("Getting getsid " +  gMyDhKey.sid);
-	return gMyDhKey.sid;
+	//console.log("Getting getsid " +  gMyDhKey[channel].sid);
+	return gMyDhKey[channel].sid;
 }
 
-function setSid(myuid, sid) {
+function setSid(channel, myuid, sid) {
 	//console.log("Setting setsid to " + sid);
-	gMyDhKey.bdpw = gMsgCryptKey;
-	gMyDhKey.sid = sid;
-	gSidDb[myuid] = sid;
+	gMyDhKey[channel].bdpw = gMsgCryptKey[channel];
+	gMyDhKey[channel].sid = sid;
+	gSidDb[channel][myuid] = sid;
 }
 
 onmessage = function (e) {
@@ -779,13 +778,30 @@ onmessage = function (e) {
 	switch (cmd) {
 		case "init":
 			{
-				gMyAddr = e.data[2];
-				gMyPort = e.data[3];
+				let addr = e.data[2];
+				let port = e.data[3];
 				let uid = utf8Encode(e.data[4]);
 				let channel = utf8Encode(e.data[5]);
 				let passwd = StringToUint8(e.data[6]);
-				//let isEncryptedChannel = e.data[7];
-				let prevBdKey = e.data[8];
+				let prevBdKey = e.data[7];
+				gMyDhKey[channel] = {
+				       pw: null,
+       				       bdpw: null,
+               			       sid: null,
+                                       group: null,
+                                       private: null,
+				       public: null,
+				       bd: null,
+	                               secret: null,
+				       secretAcked: false,
+				       bdMsgCryptKey: null,
+				       bdChannelKey: null,
+				       prevBdMsgCryptKey: null,
+				       prevBdChannelKey: null,
+				       fsInformed: false
+				};
+				gMyAddr[channel] = addr;
+				gMyPort[channel] = port;
 
 				//salt
 				let salt = new BLAKE2b(SCRYPT_SALTLEN, { salt: SALTSTR, personalization: PERSTR, key: passwd.slice(0, 32) });
@@ -802,17 +818,17 @@ onmessage = function (e) {
 					passwd = derivedKey;
 				});
 
-				gMyDhKey.pw = passwd;
+				gMyDhKey[channel].pw = passwd;
 
-				gChannelKey = createChannelKey(passwd);
+				gChannelKey[channel] = createChannelKey(passwd);
 				if(prevBdKey) {
-					createPrevBd(prevBdKey, gChannelKey);
+					createPrevBd(channel, prevBdKey, gChannelKey[channel]);
 				}
 
 				let messageKey = createMessageKey(passwd);
 
-				gMsgCryptKey = messageKey;
-				gMyUid = btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey)));
+				gMsgCryptKey[channel] = messageKey;
+				gMyUid[channel] = btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey[channel])));
 
 				//wipe unused
 				wipe(salt);
@@ -820,39 +836,38 @@ onmessage = function (e) {
 				wipe(messageKey);
 				prevBdKey = null;
 
-				gMyChannel = btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey)));
-				openSocket(gMyPort, gMyAddr);
+				gMyChannel[channel] = btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey[channel])));
+				openSocket(channel, port, addr);
 			}
 			break;
 		case "reconnect":
 			{
-				if(isSocketOpen()) { //do not reconnect if socket is already connected
+				let uid = utf8Encode(e.data[2]);
+				let channel = utf8Encode(e.data[3]);
+				let prevBdKey = e.data[4];
+				if(isSocketOpen(channel)) { //do not reconnect if socket is already connected
 					break;
 				}
 
-				let uid = utf8Encode(e.data[2]);
-				let channel = utf8Encode(e.data[3]);
-				//let isEncryptedChannel = e.data[4];
-				let prevBdKey = e.data[5];
 				if(prevBdKey) {
-					createPrevBd(prevBdKey, gChannelKey);
+					createPrevBd(channel, prevBdKey, gChannelKey[channel]);
 				}
-				gMyDhKey.private = ristretto255.scalar.getRandom();
-				gMyDhKey.public = ristretto255.scalarMult(gMyDhKey.private, gMyDhKey.group);
+				gMyDhKey[channel].private = ristretto255.scalar.getRandom();
+				gMyDhKey[channel].public = ristretto255.scalarMult(gMyDhKey[channel].private, gMyDhKey[channel].group);
 
 				//init databases
-				initSid();
-				initDhBd(uid);
+				initSid(channel);
+				initDhBd(channel, uid);
 
 				//wipe unused
 				prevBdKey="";
 
-				uid = btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey)));
-				channel = btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey)));
+				uid = btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey[channel])));
+				channel = btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey[channel])));
 
 				// verify that we have already opened the channel earlier
-				if (gMyUid === uid && gMyChannel === channel) {
-					openSocket(gMyPort, gMyAddr);
+				if (gMyUid[channel] === uid && gMyChannel[channel] === channel) {
+					openSocket(channel, gMyPort[channel], gMyAddr[channel]);
 				}
 			}
 			break;
@@ -861,9 +876,8 @@ onmessage = function (e) {
 			{
 				let uid = utf8Encode(e.data[2]);
 				let channel = utf8Encode(e.data[3]);
-				//let isEncryptedChannel = e.data[4];
-				let msgtype = e.data[5];
-				let valueofdate = e.data[6];
+				let msgtype = e.data[4];
+				let valueofdate = e.data[5];
 				let keysz = 0;
 
 				data = utf8Encode(data);
@@ -878,8 +892,8 @@ onmessage = function (e) {
 				if (msgtype & MSGISFULL)
 					flagstamp |= ISFULL;
 
-				if (msgtype & MSGISIMAGE)
-					flagstamp |= ISIMAGE;
+				if (msgtype & MSGISDATA)
+					flagstamp |= ISDATA;
 
 				if (msgtype & MSGISPRESENCE)
 					flagstamp |= ISPRESENCE;
@@ -905,60 +919,62 @@ onmessage = function (e) {
 				let padlen = 0;
 				if(cmd == "send") {
 					//add public key, if it exists
-					if (gMyDhKey.public) {
-						let pub = Uint8ToString(gMyDhKey.public);
+					if (gMyDhKey[channel].public) {
+						let pub = Uint8ToString(gMyDhKey[channel].public);
 						keysz += pub.length;
 						data += pub;
-						//console.log("TX: Adding pub key " + gMyDhKey.public);
+						console.log("TX: Adding pub key");
 					}
 					else {
 						//console.log("TX: Pub key is null!");
 						padlen += DH_BITS/8;
 					}
 					//add BD key, if it exists
-					if (gMyDhKey.bd && !(msgtype & MSGISPRESENCEACK)) {
-						if(bdIsZeroes(gMyDhKey.bd)) {
-							//console.log("Adding ISDBONE flag");
-							flagstamp |= ISBDONE;
-							padlen += DH_BITS/8;
+					if (gMyDhKey[channel].bd && 0 == (msgtype & MSGISPRESENCEACK)) {
+						let sidcnt = Object.keys(gSidDb[channel]).length;
+						if(bdIsZeroes(gMyDhKey[channel].bd)) {
+							if (sidcnt == 2) {
+								console.log("Adding ISDBONE flag");
+								flagstamp |= ISBDONE;
+								padlen += DH_BITS/8;
+							}
 						}
 						else {
-							let bd = Uint8ToString(gMyDhKey.bd);
-							//console.log("TX: Bd " + bd + " dhkeybd " + gMyDhKey.bd);
+							let bd = Uint8ToString(gMyDhKey[channel].bd);
+							console.log("TX: Bd");
 							keysz += bd.length;
 							data += bd;
 						}
-						let sidcnt = Object.keys(gDhDb).length;
-						let pubcnt = Object.keys(gDhDb).length;
-						let bdcnt = Object.keys(gBdDb).length;
-						//console.log("During send sidcnt " + sidcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
-						if (sidcnt == pubcnt && pubcnt == bdcnt && gMyDhKey.secret != null) {
+						let pubcnt = Object.keys(gDhDb[channel]).length;
+						let bdcnt = Object.keys(gBdDb[channel]).length;
+						console.log("During send sidcnt " + sidcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
+						if (sidcnt == pubcnt && pubcnt == bdcnt && gMyDhKey[channel].secret != null) {
 							flagstamp |= ISBDACK;
-							if (gBdAckDb[uid] == null) {
-								//console.log("Adding self to bdack db");
-								gBdAckDb[uid] = true;
+							if (gBdAckDb[channel][uid] == null) {
+								console.log("Adding self to bdack db");
+								gBdAckDb[channel][uid] = true;
 							}
 						}
 					}
 					else {
 						padlen += DH_BITS/8;
 					}
-					if (gMyDhKey.bdMsgCryptKey && gMyDhKey.secret && gMyDhKey.secretAcked) {
-						if (!gMyDhKey.fsInformed) {
-							processOnForwardSecrecy(gMyDhKey.secret);
-							gMyDhKey.fsInformed = true;
+					if (gMyDhKey[channel].bdMsgCryptKey && gMyDhKey[channel].secret && gMyDhKey[channel].secretAcked) {
+						if (!gMyDhKey[channel].fsInformed) {
+							processOnForwardSecrecy(channel, gMyDhKey[channel].secret);
+							gMyDhKey[channel].fsInformed = true;
 						}
-						crypt = gMyDhKey.bdMsgCryptKey;
-						channel_key = gMyDhKey.bdChannelKey;
+						crypt = gMyDhKey[channel].bdMsgCryptKey;
+						channel_key = gMyDhKey[channel].bdChannelKey;
 					}
 					else {
-						crypt = gMsgCryptKey;
-						channel_key = gChannelKey;
+						crypt = gMsgCryptKey[channel];
+						channel_key = gChannelKey[channel];
 					}
 				}
-				else if (gMyDhKey.prevBdMsgCryptKey && gMyDhKey.prevBdChannelKey) { //resend_prev
-					crypt = gMyDhKey.prevBdMsgCryptKey;
-					channel_key = gMyDhKey.prevBdChannelKey;
+				else if (gMyDhKey[channel].prevBdMsgCryptKey && gMyDhKey[channel].prevBdChannelKey) { //resend_prev
+					crypt = gMyDhKey[channel].prevBdMsgCryptKey;
+					channel_key = gMyDhKey[channel].prevBdChannelKey;
 				}
 
 				if(!crypt || !channel_key) {
@@ -969,7 +985,7 @@ onmessage = function (e) {
 				//version and msg size
 				newmessage = Uint16ValToString(msgsz);
 				//sid
-				const sid = getSid(uid);
+				const sid = getSid(channel, uid);
 				newmessage += Uint8ToString(sid);
 				//keysz
 				newmessage += Uint16ValToString(keysz);
@@ -1009,15 +1025,15 @@ onmessage = function (e) {
 				newarr.set(arr, nonce.byteLength);
 				newarr.set(hmac, nonce.byteLength + arr.byteLength);
 				let obj = {
-					uid: btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey))),
-					channel: btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey))),
+					uid: btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey[channel]))),
+					channel: btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey[channel]))),
 					message: newarr
 				};
 				let encodedMsg = msgEncode(obj);
 				if(!encodedMsg)
 					break;
 				try {
-					gWebSocket.send(encodedMsg);
+					gWebSocket[channel].send(encodedMsg);
 				} catch (err) {
 					break;
 				}
@@ -1027,12 +1043,11 @@ onmessage = function (e) {
 		case "close":
 			{
 				let uid = utf8Encode(e.data[2]);
-				//let channel = e.data[3];
-				//let isEncryptedChannel = e.data[4];
-				gWebSocket.close();
-				initSid();
-				initDhBd(uid);
-				initPrevDhBd(uid);
+				let channel = e.data[3];
+				gWebSocket[channel].close();
+				initSid(channel);
+				initDhBd(channel, uid);
+				initPrevDhBd(channel, uid);
 			}
 			break;
 	}
