@@ -841,7 +841,7 @@ function sub(p, q) {
  */
 function getRandomPoint() {
   // create a random hash string
-  const h = nacl.randomBytes(64);
+  const h = self.crypto.getRandomValues(64);
   // let h = new Uint8Array(64);
   // lowlevel.randombytes(h, 64);
   return pointFromHash(h);

@@ -1,12 +1,12 @@
 "use strict";
 // Copyright (C) 2016 Dmitry Chestnykh
 // MIT License. See LICENSE file for details.
-//Object.defineProperty(exports, "__esModule", { value: true });
+//Object.defineProperty(//exports, "__esModule", { value: true });
 ////exports.writeFloat64LE = //exports.writeFloat64BE = //exports.writeFloat32LE = //exports.writeFloat32BE = //exports.readFloat64LE = //exports.readFloat64BE = //exports.readFloat32LE = //exports.readFloat32BE = //exports.writeUintLE = //exports.writeUintBE = //exports.readUintLE = //exports.readUintBE = //exports.writeInt64LE = //exports.writeUint64LE = //exports.writeInt64BE = //exports.writeUint64BE = //exports.readUint64LE = //exports.readInt64LE = //exports.readUint64BE = //exports.readInt64BE = //exports.writeInt32LE = //exports.writeUint32LE = //exports.writeInt32BE = //exports.writeUint32BE = //exports.readUint32LE = //exports.readInt32LE = //exports.readUint32BE = //exports.readInt32BE = //exports.writeInt16LE = //exports.writeUint16LE = //exports.writeInt16BE = //exports.writeUint16BE = //exports.readUint16LE = //exports.readInt16LE = //exports.readUint16BE = //exports.readInt16BE = void 0;
 /**
  * Package binary provides functions for encoding and decoding numbers in byte arrays.
  */
-//var int_1 = require("@stablelib/int");
+//var int_1 = require("./int");
 // TODO(dchest): add asserts for correct value ranges and array offsets.
 /**
  * Reads 2 bytes from array starting at offset as big-endian
@@ -25,7 +25,7 @@ function readUint16BE(array, offset) {
     if (offset === void 0) { offset = 0; }
     return ((array[offset + 0] << 8) | array[offset + 1]) >>> 0;
 }
-////exports.readUint16BE = readUint16BE;
+//exports.readUint16BE = readUint16BE;
 /**
  * Reads 2 bytes from array starting at offset as little-endian
  * signed 16-bit integer and returns it.
@@ -34,7 +34,7 @@ function readInt16LE(array, offset) {
     if (offset === void 0) { offset = 0; }
     return (((array[offset + 1] << 8) | array[offset]) << 16) >> 16;
 }
-////exports.readInt16LE = readInt16LE;
+//exports.readInt16LE = readInt16LE;
 /**
  * Reads 2 bytes from array starting at offset as little-endian
  * unsigned 16-bit integer and returns it.
@@ -43,7 +43,7 @@ function readUint16LE(array, offset) {
     if (offset === void 0) { offset = 0; }
     return ((array[offset + 1] << 8) | array[offset]) >>> 0;
 }
-////exports.readUint16LE = readUint16LE;
+//exports.readUint16LE = readUint16LE;
 /**
  * Writes 2-byte big-endian representation of 16-bit unsigned
  * value to byte array starting at offset.
@@ -59,8 +59,8 @@ function writeUint16BE(value, out, offset) {
     out[offset + 1] = value >>> 0;
     return out;
 }
-////exports.writeUint16BE = writeUint16BE;
-////exports.writeInt16BE = writeUint16BE;
+//exports.writeUint16BE = writeUint16BE;
+//exports.writeInt16BE = writeUint16BE;
 /**
  * Writes 2-byte little-endian representation of 16-bit unsigned
  * value to array starting at offset.
@@ -76,8 +76,8 @@ function writeUint16LE(value, out, offset) {
     out[offset + 1] = value >>> 8;
     return out;
 }
-////exports.writeUint16LE = writeUint16LE;
-////exports.writeInt16LE = writeUint16LE;
+//exports.writeUint16LE = writeUint16LE;
+//exports.writeInt16LE = writeUint16LE;
 /**
  * Reads 4 bytes from array starting at offset as big-endian
  * signed 32-bit integer and returns it.
@@ -89,7 +89,7 @@ function readInt32BE(array, offset) {
         (array[offset + 2] << 8) |
         array[offset + 3];
 }
-////exports.readInt32BE = readInt32BE;
+//exports.readInt32BE = readInt32BE;
 /**
  * Reads 4 bytes from array starting at offset as big-endian
  * unsigned 32-bit integer and returns it.
@@ -101,7 +101,7 @@ function readUint32BE(array, offset) {
         (array[offset + 2] << 8) |
         array[offset + 3]) >>> 0;
 }
-////exports.readUint32BE = readUint32BE;
+//exports.readUint32BE = readUint32BE;
 /**
  * Reads 4 bytes from array starting at offset as little-endian
  * signed 32-bit integer and returns it.
@@ -113,7 +113,7 @@ function readInt32LE(array, offset) {
         (array[offset + 1] << 8) |
         array[offset];
 }
-////exports.readInt32LE = readInt32LE;
+//exports.readInt32LE = readInt32LE;
 /**
  * Reads 4 bytes from array starting at offset as little-endian
  * unsigned 32-bit integer and returns it.
@@ -125,7 +125,7 @@ function readUint32LE(array, offset) {
         (array[offset + 1] << 8) |
         array[offset]) >>> 0;
 }
-////exports.readUint32LE = readUint32LE;
+//exports.readUint32LE = readUint32LE;
 /**
  * Writes 4-byte big-endian representation of 32-bit unsigned
  * value to byte array starting at offset.
@@ -143,8 +143,8 @@ function writeUint32BE(value, out, offset) {
     out[offset + 3] = value >>> 0;
     return out;
 }
-////exports.writeUint32BE = writeUint32BE;
-////exports.writeInt32BE = writeUint32BE;
+//exports.writeUint32BE = writeUint32BE;
+//exports.writeInt32BE = writeUint32BE;
 /**
  * Writes 4-byte little-endian representation of 32-bit unsigned
  * value to array starting at offset.
@@ -162,8 +162,8 @@ function writeUint32LE(value, out, offset) {
     out[offset + 3] = value >>> 24;
     return out;
 }
-////exports.writeUint32LE = writeUint32LE;
-////exports.writeInt32LE = writeUint32LE;
+//exports.writeUint32LE = writeUint32LE;
+//exports.writeInt32LE = writeUint32LE;
 /**
  * Reads 8 bytes from array starting at offset as big-endian
  * signed 64-bit integer and returns it.
@@ -179,7 +179,7 @@ function readInt64BE(array, offset) {
     var lo = readInt32BE(array, offset + 4);
     return hi * 0x100000000 + lo - ((lo >> 31) * 0x100000000);
 }
-////exports.readInt64BE = readInt64BE;
+//exports.readInt64BE = readInt64BE;
 /**
  * Reads 8 bytes from array starting at offset as big-endian
  * unsigned 64-bit integer and returns it.
@@ -192,7 +192,7 @@ function readUint64BE(array, offset) {
     var lo = readUint32BE(array, offset + 4);
     return hi * 0x100000000 + lo;
 }
-////exports.readUint64BE = readUint64BE;
+//exports.readUint64BE = readUint64BE;
 /**
  * Reads 8 bytes from array starting at offset as little-endian
  * signed 64-bit integer and returns it.
@@ -208,7 +208,7 @@ function readInt64LE(array, offset) {
     var hi = readInt32LE(array, offset + 4);
     return hi * 0x100000000 + lo - ((lo >> 31) * 0x100000000);
 }
-////exports.readInt64LE = readInt64LE;
+//exports.readInt64LE = readInt64LE;
 /**
  * Reads 8 bytes from array starting at offset as little-endian
  * unsigned 64-bit integer and returns it.
@@ -221,7 +221,7 @@ function readUint64LE(array, offset) {
     var hi = readUint32LE(array, offset + 4);
     return hi * 0x100000000 + lo;
 }
-////exports.readUint64LE = readUint64LE;
+//exports.readUint64LE = readUint64LE;
 /**
  * Writes 8-byte big-endian representation of 64-bit unsigned
  * value to byte array starting at offset.
@@ -239,8 +239,8 @@ function writeUint64BE(value, out, offset) {
     writeUint32BE(value >>> 0, out, offset + 4);
     return out;
 }
-////exports.writeUint64BE = writeUint64BE;
-////exports.writeInt64BE = writeUint64BE;
+//exports.writeUint64BE = writeUint64BE;
+//exports.writeInt64BE = writeUint64BE;
 /**
  * Writes 8-byte little-endian representation of 64-bit unsigned
  * value to byte array starting at offset.
@@ -258,8 +258,8 @@ function writeUint64LE(value, out, offset) {
     writeUint32LE(value / 0x100000000 >>> 0, out, offset + 4);
     return out;
 }
-////exports.writeUint64LE = writeUint64LE;
-////exports.writeInt64LE = writeUint64LE;
+//exports.writeUint64LE = writeUint64LE;
+//exports.writeInt64LE = writeUint64LE;
 /**
  * Reads bytes from array starting at offset as big-endian
  * unsigned bitLen-bit integer and returns it.
@@ -283,7 +283,7 @@ function readUintBE(bitLength, array, offset) {
     }
     return result;
 }
-////exports.readUintBE = readUintBE;
+//exports.readUintBE = readUintBE;
 /**
  * Reads bytes from array starting at offset as little-endian
  * unsigned bitLen-bit integer and returns it.
@@ -307,7 +307,7 @@ function readUintLE(bitLength, array, offset) {
     }
     return result;
 }
-////exports.readUintLE = readUintLE;
+//exports.readUintLE = readUintLE;
 /**
  * Writes a big-endian representation of bitLen-bit unsigned
  * value to array starting at offset.
@@ -325,7 +325,7 @@ function writeUintBE(bitLength, value, out, offset) {
     if (bitLength % 8 !== 0) {
         throw new Error("writeUintBE supports only bitLengths divisible by 8");
     }
-    if (!isSafeInteger(value)) {
+    if (!(0, int_1.isSafeInteger)(value)) {
         throw new Error("writeUintBE value must be an integer");
     }
     var div = 1;
@@ -335,7 +335,7 @@ function writeUintBE(bitLength, value, out, offset) {
     }
     return out;
 }
-////exports.writeUintBE = writeUintBE;
+//exports.writeUintBE = writeUintBE;
 /**
  * Writes a little-endian representation of bitLen-bit unsigned
  * value to array starting at offset.
@@ -353,7 +353,7 @@ function writeUintLE(bitLength, value, out, offset) {
     if (bitLength % 8 !== 0) {
         throw new Error("writeUintLE supports only bitLengths divisible by 8");
     }
-    if (!isSafeInteger(value)) {
+    if (!(0, int_1.isSafeInteger)(value)) {
         throw new Error("writeUintLE value must be an integer");
     }
     var div = 1;
@@ -363,7 +363,7 @@ function writeUintLE(bitLength, value, out, offset) {
     }
     return out;
 }
-////exports.writeUintLE = writeUintLE;
+//exports.writeUintLE = writeUintLE;
 /**
  * Reads 4 bytes from array starting at offset as big-endian
  * 32-bit floating-point number and returns it.
@@ -373,7 +373,7 @@ function readFloat32BE(array, offset) {
     var view = new DataView(array.buffer, array.byteOffset, array.byteLength);
     return view.getFloat32(offset);
 }
-////exports.readFloat32BE = readFloat32BE;
+//exports.readFloat32BE = readFloat32BE;
 /**
  * Reads 4 bytes from array starting at offset as little-endian
  * 32-bit floating-point number and returns it.
@@ -468,4 +468,3 @@ function writeFloat64LE(value, out, offset) {
     return out;
 }
 //exports.writeFloat64LE = writeFloat64LE;
-//# sourceMappingURL=binary.js.map
