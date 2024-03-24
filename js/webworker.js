@@ -480,7 +480,7 @@ function processOnMessageData(channel, msg) {
 		if (true == isEqualHmacs(hmac, rhmac)) {
 			hmacok = true;
 			crypt = gMyDhKey[channel].bdMsgCryptKey;
-			console.log("Current crypt matches " + crypt);
+			//console.log("Current crypt matches " + crypt);
 			fsEnabled = true;
 		}
 	}
@@ -493,7 +493,7 @@ function processOnMessageData(channel, msg) {
 		if (true == isEqualHmacs(hmac, rhmac)) {
 			hmacok = true;
 			crypt = gMyDhKey[channel].prevBdMsgCryptKey;
-			console.log("Prevbd crypt matches " + crypt);
+			//console.log("Prevbd crypt matches " + crypt);
 			fsEnabled = true;
 		}
 	}
@@ -507,13 +507,13 @@ function processOnMessageData(channel, msg) {
 			return;
 		}
 		crypt = gMsgCryptKey[channel];
-		console.log("Msg crypt matches " + crypt);
+		//console.log("Msg crypt matches " + crypt);
 	}
 
 	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey[channel])));
 	let decrypted = Uint8ToString(nacl.secretbox.open(message, noncem.slice(0,24), crypt));
 	if (decrypted.length < HDRLEN) {
-		console.log("Dropping")
+		//console.log("Dropping")
 		return;
 	}
 
@@ -1039,7 +1039,7 @@ onmessage = function (e) {
 					let padding = pseudoRandBytes(padsz); // avoid using real random for padding
 					newmessage += Uint8ToString(padding);
 				}
-				console.log("Send crypt " + crypt);
+				//console.log("Send crypt " + crypt);
 				encrypted = nacl.secretbox(StringToUint8(newmessage), nonce.slice(0,24), crypt);
 				let arr = encrypted;
 
