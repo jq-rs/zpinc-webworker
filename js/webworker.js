@@ -248,7 +248,7 @@ function bdSetZeroes() {
 	return Uint8ToString(bdin);
 }
 
-const BDDEBUG = true;
+const BDDEBUG = false;
 function processBd(channel, myuid, uid, msgtype, message) {
 	let init = false;
 
