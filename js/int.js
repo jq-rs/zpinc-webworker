@@ -14,27 +14,27 @@ function imulShim(a, b) {
 }
 /** 32-bit integer multiplication.  */
 // Use system Math.imul if available, otherwise use our shim.
-const mul = Math.imul || imulShim;
+//exports.mul = Math.imul || imulShim;
 /** 32-bit integer addition.  */
 function add(a, b) {
     return (a + b) | 0;
 }
-
+//exports.add = add;
 /**  32-bit integer subtraction.  */
 function sub(a, b) {
     return (a - b) | 0;
 }
-
+//exports.sub = sub;
 /** 32-bit integer left rotation */
 function rotl(x, n) {
     return x << n | x >>> (32 - n);
 }
-
+//exports.rotl = rotl;
 /** 32-bit integer left rotation */
 function rotr(x, n) {
     return x << (32 - n) | x >>> n;
 }
-
+//exports.rotr = rotr;
 function isIntegerShim(n) {
     return typeof n === "number" && isFinite(n) && Math.floor(n) === n;
 }
@@ -43,20 +43,20 @@ function isIntegerShim(n) {
  *
  * In ES2015, Number.isInteger.
  */
-const isInteger = Number.isInteger || isIntegerShim;
+//exports.isInteger = Number.isInteger || isIntegerShim;
 /**
  *  Math.pow(2, 53) - 1
  *
  *  In ES2015 Number.MAX_SAFE_INTEGER.
  */
-const MAX_SAFE_INTEGER = 9007199254740991;
+//exports.MAX_SAFE_INTEGER = 9007199254740991;
 /**
  * Returns true if the argument is a safe integer number
  * (-MIN_SAFE_INTEGER < number <= MAX_SAFE_INTEGER)
  *
  * In ES2015, Number.isSafeInteger.
  */
-const isSafeInteger = function (n) {
-    return exports.isInteger(n) && (n >= -exports.MAX_SAFE_INTEGER && n <= exports.MAX_SAFE_INTEGER);
+var isSafeInteger = function (n) {
+    return (0, exports.isInteger)(n) && (n >= -exports.MAX_SAFE_INTEGER && n <= exports.MAX_SAFE_INTEGER);
 };
-//# sourceMappingURL=int.js.map
+//exports.isSafeInteger = isSafeInteger;

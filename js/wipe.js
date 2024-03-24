@@ -20,13 +20,9 @@ function wipe(array) {
     // Right now it's similar to array.fill(0). If it turns
     // out that runtimes optimize this call away, maybe
     // we can try something else.
-    if(array) {
-        for (let i = 0; i < array.length; i++) {
-            array[i] = 0;
-        }
-        return array;
+    for (var i = 0; (array != null) && i < array.length; i++) {
+        array[i] = 0;
     }
-    return null;
+    return array;
 }
 //exports.wipe = wipe;
-//# sourceMappingURL=wipe.js.map
