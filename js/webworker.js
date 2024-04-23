@@ -75,11 +75,13 @@ let gBdDb = {};
 let gBdAckDb = {};
 
 function utf8Decode(string) {
-	return decodeURIComponent(string);
+	//nop
+	return string;
 }
 
 function utf8Encode(utftext) {
-	return encodeURIComponent(utftext);
+	//nop
+	return utftext;
 }
 
 function createFlagstamp(valueofdate, weekstamp, timestamp) {
