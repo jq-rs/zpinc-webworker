@@ -74,16 +74,6 @@ let gDhDb = {};
 let gBdDb = {};
 let gBdAckDb = {};
 
-function utf8Decode(string) {
-	//nop
-	return string;
-}
-
-function utf8Encode(utftext) {
-	//nop
-	return utftext;
-}
-
 function createFlagstamp(valueofdate, weekstamp, timestamp) {
 	let begin = BEGIN;
 	let this_time = new Date(begin.valueOf() + weekstamp * 1000 * 60 * 60 * 24 * 7 + timestamp * 1000 * 60);
@@ -512,7 +502,7 @@ function processOnMessageData(channel, msg) {
 		//console.log("Msg crypt matches " + crypt);
 	}
 
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey[channel])));
+	let uid = (Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey[channel])));
 	let decrypted = Uint8ToString(nacl.secretbox.open(message, noncem.slice(0,24), crypt));
 	if (decrypted.length < HDRLEN) {
 		//console.log("Dropping")
@@ -532,7 +522,7 @@ function processOnMessageData(channel, msg) {
 
 	let msgDate = readTimestamp(timeU16, weekU16, flagU16 & ALLISSET);
 
-	message = utf8Decode(decrypted.slice(HDRLEN, msgsz));
+	message = (decrypted.slice(HDRLEN, msgsz));
 
 	let msgtype = 0;
 	if (flagU16 & ISFULL)
@@ -554,7 +544,7 @@ function processOnMessageData(channel, msg) {
 	if (flagU16 & ISBDACK)
 		msgtype |= MSGISBDACK;
 
-	const myuid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	const myuid = (Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
 	if(myuid == uid) { //resync
 		initSid(channel);
 		initDhBd(channel, uid);
@@ -590,7 +580,7 @@ function processOnMessageData(channel, msg) {
 		msgtype = processBd(channel, myuid, uid, msgtype, keystr);
 	}
 
-	postMessage(["data", uid, utf8Decode(channel), msgDate.valueOf(), message, msgtype, fsEnabled]);
+	postMessage(["data", uid, (channel), msgDate.valueOf(), message, msgtype, fsEnabled]);
 }
 
 function msgDecode(data) {
@@ -611,8 +601,8 @@ function msgEncode(obj) {
 
 function processOnClose(channel) {
 	gWebSocket[channel].close();
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
-	postMessage(["close", uid, utf8Decode(channel)]);
+	let uid = (Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	postMessage(["close", uid, (channel)]);
 }
 
 function processOnOpen(channel, reopen) {
@@ -620,23 +610,23 @@ function processOnOpen(channel, reopen) {
 	let join = '{"uid":"' + gMyUid[channel] + '","channel":"' + gMyChannel[channel] + '"}';
 	gWebSocket[channel].send(join);
 
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	let uid = (Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
 	if(false == reopen) {
-		postMessage(["init", uid, utf8Decode(channel)]);
+		postMessage(["init", uid, (channel)]);
 	}
 	else {
-		postMessage(["resync", uid, utf8Decode(channel)]);
+		postMessage(["resync", uid, (channel)]);
 	}
 }
 
 function processOnForwardSecrecy(channel, bdKey) {
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
-	postMessage(["forwardsecrecy", uid, utf8Decode(channel), bdKey.toString(16)]);
+	let uid = (Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	postMessage(["forwardsecrecy", uid, (channel), bdKey.toString(16)]);
 }
 
 function processOnForwardSecrecyOff(channel) {
-	let uid = utf8Decode(Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
-	postMessage(["forwardsecrecyoff", uid, utf8Decode(channel)]);
+	let uid = (Uint8ToString(nacl.secretbox.open(StringToUint8(atob(gMyUid[channel])), UIDNONCE, gChannelKey[channel])));
+	postMessage(["forwardsecrecyoff", uid, (channel)]);
 }
 
 function isSocketOpen(channel) {
@@ -789,8 +779,8 @@ onmessage = function (e) {
 			{
 				let addr = e.data[2];
 				let port = e.data[3];
-				let uid = utf8Encode(e.data[4]);
-				let channel = utf8Encode(e.data[5]);
+				let uid = (e.data[4]);
+				let channel = (e.data[5]);
 				let passwd = StringToUint8(e.data[6]);
 				let prevBdKey = e.data[7];
 				gMyDhKey[channel] = {
@@ -850,8 +840,8 @@ onmessage = function (e) {
 			break;
 		case "reconnect":
 			{
-				let uid = utf8Encode(e.data[2]);
-				let channel = utf8Encode(e.data[3]);
+				let uid = (e.data[2]);
+				let channel = (e.data[3]);
 				let prevBdKey = e.data[4];
 				if(isSocketOpen(channel)) { //do not reconnect if socket is already connected
 					break;
@@ -879,8 +869,8 @@ onmessage = function (e) {
 			break;
 		case "resync":
 			{
-				let uid = utf8Encode(e.data[2]);
-				let channel = utf8Encode(e.data[3]);
+				let uid = (e.data[2]);
+				let channel = (e.data[3]);
 				let prevBdKey = e.data[4];
 
 				if(prevBdKey) {
@@ -906,13 +896,13 @@ onmessage = function (e) {
 		case "send":
 		case "resend_prev":
 			{
-				let uid = utf8Encode(e.data[2]);
-				let channel = utf8Encode(e.data[3]);
+				let uid = (e.data[2]);
+				let channel = (e.data[3]);
 				let msgtype = e.data[4];
 				let valueofdate = e.data[5];
 				let keysz = 0;
 
-				data = utf8Encode(data);
+				data = (data);
 
 				let nonce = new Uint8Array(32);
 				self.crypto.getRandomValues(nonce);
@@ -1075,13 +1065,13 @@ onmessage = function (e) {
 				} catch (err) {
 					break;
 				}
-				postMessage(["send", utf8Decode(uid), utf8Decode(channel), msgtype & MSGISMULTIPART ? true : false]);
+				postMessage(["send", (uid), (channel), msgtype & MSGISMULTIPART ? true : false]);
 			}
 			break;
 		case "close":
 			{
-				let uid = utf8Encode(e.data[2]);
-				let channel = utf8Encode(e.data[3]);
+				let uid = (e.data[2]);
+				let channel = (e.data[3]);
 				gWebSocket[channel].close();
 				initSid(channel);
 				initDhBd(channel, uid);
