@@ -121,15 +121,6 @@ function isEqualHmacs(hmac, rhmac) {
 	return true;
 }
 
-function isEqualSid(sid1, sid2) {
-	for (let i = 0; i < sid1.byteLength; i++) {
-		if (sid1[i] != sid2[i]) {
-			return false;
-		}
-	}
-	return true;
-}
-
 function StringToUint8(str) {
 	let arr = new Uint8Array(str.length);
 	let len = str.length;
@@ -196,7 +187,7 @@ function initDhBd(channel, myuid) {
 	gBdDb[channel] = {};
 	gBdAckDb[channel] = {};
 	if (gMyDhKey[channel].public) {
-		gDhDb[channel][myuid] = Uint8ToString(gMyDhKey[channel].public);
+		gDhDb[channel][myuid] = gMyDhKey[channel].public;
 	}
 	gMyDhKey[channel].secret = null;
 	gMyDhKey[channel].secretAcked = false;
@@ -216,7 +207,7 @@ function setDhPublic(channel, myuid, sid) {
 	let users = "";
 	for (let userid in siddb_sorted) {
 		//console.log("Found sid " +  gSidDb[channel][userid] + " for user " + userid);
-		if(!isEqualSid(gSidDb[channel][userid], sid)) {
+		if(!Uint8ArrayIsEqual(gSidDb[channel][userid], sid)) {
 			pubok = false;
 			break;
 		}
@@ -227,14 +218,11 @@ function setDhPublic(channel, myuid, sid) {
 		//console.log("Setting public key for sid " + sid + " cnt " + cnt);
 		let sid16 = new Uint8Array(16);
 		sid16.set(sid, 0);
-		const userarr = StringToUint8(users);
-		let arr = new Uint8Array(userarr.byteLength);
-		arr.set(userarr, 0);
 		const digest64B = new BLAKE2b(64, { salt: sid16, personalization: PERBDSTR, key: gMsgCryptKey[channel] });
 		gMyDhKey[channel].group = ristretto255.fromHash(digest64B.digest());
 		gMyDhKey[channel].private = ristretto255.scalar.getRandom();
 		gMyDhKey[channel].public = ristretto255.scalarMult(gMyDhKey[channel].private, gMyDhKey[channel].group);
-		gDhDb[channel][myuid] = Uint8ToString(gMyDhKey[channel].public);
+		gDhDb[channel][myuid] = gMyDhKey[channel].public;
 	}
 }
 
@@ -248,22 +236,29 @@ function bdSetZeroes() {
 	for (let i = 0; i < bdin.length; i++) {
 		bdin[i] = 0;
 	}
-	return Uint8ToString(bdin);
+	return bdin;
+}
+
+function Uint8ArrayIsEqual(arr1, arr2) {
+    if (arr1.length !== arr2.length) {
+        return false;
+    }
+    return arr1.every((value, index) => value === arr2[index])
 }
 
 const BDDEBUG = false;
-function processBd(channel, myuid, uid, msgtype, message) {
+function processBd(channel, myuid, uid, msgtype, key_array) {
 	let init = false;
 
 	if(uid == myuid) {  //received own message, init due to resyncing
 		initDhBd(channel, myuid);
 		init = true;
 	}
-	else if (message.length == DH_BITS/8 || message.length == 2 * (DH_BITS/8)) {
+	else if (key_array.length == DH_BITS/8 || key_array.length == 2 * (DH_BITS/8)) {
 		if(BDDEBUG)
-			console.log("Got " + uid + " public+bd key, len " + message.length);
+			console.log("Got " + uid + " public+bd key, len " + key_array.length);
 
-		if (message.length == DH_BITS/8 && 0 == (msgtype & MSGISBDONE) && 0 == (msgtype & MSGISBDACK)) {
+		if (key_array.length == DH_BITS/8 && 0 == (msgtype & MSGISBDONE) && 0 == (msgtype & MSGISBDACK)) {
 			if ((msgtype & MSGISPRESENCE) && 0 == (msgtype & MSGISPRESENCEACK)) {
 				msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
 				if(BDDEBUG)
@@ -274,11 +269,11 @@ function processBd(channel, myuid, uid, msgtype, message) {
 			initBd(channel, myuid);
 		}
 
-		let pub = message.substring(0, DH_BITS/8);
+		let pub = key_array.slice(0, DH_BITS/8);
 		if (null == gDhDb[channel][uid]) {
 			gDhDb[channel][uid] = pub;
 		}
-		else if (message.length == DH_BITS/8 && 0 == (msgtype & MSGISBDONE) && gDhDb[channel][uid] && gBdDb[channel][uid]) {
+		else if (key_array.length == DH_BITS/8 && 0 == (msgtype & MSGISBDONE) && gDhDb[channel][uid] && gBdDb[channel][uid]) {
 			initDhBd(channel, myuid);
 			if(BDDEBUG)
 				console.log("!!! skey invalidated in short message as with existing bd!!!");
@@ -299,7 +294,7 @@ function processBd(channel, myuid, uid, msgtype, message) {
 				if (userid == myuid) {
 					index = pubcnt;
 				}
-				keys.push(StringToUint8(gDhDb[channel][userid]));
+				keys.push(gDhDb[channel][userid]);
 				pubcnt++;
 			}
 
@@ -321,26 +316,28 @@ function processBd(channel, myuid, uid, msgtype, message) {
 				gMyDhKey[channel].bd = ristretto255.scalarMult(gMyDhKey[channel].private, step);
 				if (BDDEBUG)
 					console.log("Setting Bd " + gMyDhKey[channel].bd);
-				gBdDb[channel][myuid] = Uint8ToString(gMyDhKey[channel].bd);
+				gBdDb[channel][myuid] = gMyDhKey[channel].bd;
 			}
 
-			if (message.length == 2 * (DH_BITS/8) || (message.length == DH_BITS/8 && (msgtype & MSGISBDONE))) {
+			if (key_array.length == 2 * (DH_BITS/8) || (key_array.length == DH_BITS/8 && (msgtype & MSGISBDONE))) {
 				let bd = bdSetZeroes();
 				let len = 0;
-				if (message.length == 2 * (DH_BITS/8))
+				if (key_array.length == 2 * (DH_BITS/8))
 					len = 2 * DH_BITS/8;
 
 				if(len)
-					bd = message.substring(DH_BITS/8, len);
+					bd = key_array.slice(DH_BITS/8, len);
 
-				if (gBdDb[channel][uid] != null && gBdDb[channel][uid] != bd) {
+				if (gBdDb[channel][uid] != null && !Uint8ArrayIsEqual(gBdDb[channel][uid],bd)) {
+					if(BDDEBUG) 
+						console.log("!!! skey invalidated in mismatching bd !!! " + gBdDb[channel][uid] + " vs " + bd);
 					//start again
 					initBd(channel, myuid);
-					if(BDDEBUG)
-						console.log("!!! skey invalidated in mismatching bd !!!");
+					//if(BDDEBUG)
+					//	console.log("!!! skey invalidated in mismatching bd !!!");
 					gDhDb[channel][uid] = pub;
 				}
-				else if ((pubcnt > 2 && bdIsZeroes(StringToUint8(bd))) || (pubcnt == 2 && !bdIsZeroes(StringToUint8(bd)))) {
+				else if ((pubcnt > 2 && bdIsZeroes(bd)) || (pubcnt == 2 && !bdIsZeroes(bd))) {
 					initDhBd(channel, myuid);
 					if(BDDEBUG)
 						console.log("!!! skey invalidated in mismatching bd length!!! pubcnt " + pubcnt);
@@ -368,7 +365,7 @@ function processBd(channel, myuid, uid, msgtype, message) {
 						if (userid == myuid) {
 							index = bdcnt;
 						}
-						xkeys.push(StringToUint8(gBdDb[channel][userid]));
+						xkeys.push(gBdDb[channel][userid]);
 						bdcnt++;
 					}
 
@@ -399,7 +396,7 @@ function processBd(channel, myuid, uid, msgtype, message) {
 						gMyDhKey[channel].secret = skey;
 
 						let rnd = new BLAKE2b(32, { salt: SALTSTR, personalization: PERSTR, key: gChannelKey[channel]});
-						rnd.update(StringToUint8(gMyDhKey[channel].secret.toString(16)));
+						rnd.update(gMyDhKey[channel].secret);
 
 						gMyDhKey[channel].bdChannelKey = createChannelKey(rnd.digest());
 						let key = createMessageKey(rnd.digest());
@@ -413,7 +410,7 @@ function processBd(channel, myuid, uid, msgtype, message) {
 					}
 				}
 				//if bd handling fails, ignore large handling
-				if (false == init && ((message.length == DH_BITS/8 && msgtype & MSGISBDACK) || message.length == 2 * (DH_BITS/8))) {
+				if (false == init && ((key_array.length == DH_BITS/8 && msgtype & MSGISBDACK) || key_array.length == 2 * (DH_BITS/8))) {
 					if (gMyDhKey[channel].secretAcked) {
 						//do nothing, already acked
 						//console.log("Nothing to do, already acked");
@@ -431,8 +428,8 @@ function processBd(channel, myuid, uid, msgtype, message) {
 							if (BDDEBUG)
 								console.log("Ackcnt " + ackcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt);
 							if (gMyDhKey[channel].bdMsgCryptKey && gMyDhKey[channel].secret && pubcnt == bdcnt && ackcnt == pubcnt &&
-								(message.length == DH_BITS/8 && (msgtype & MSGISBDACK) && (msgtype & MSGISBDONE) && pubcnt == 2 ||
-								 message.length == 2 * (DH_BITS/8) && (msgtype & MSGISBDACK) && pubcnt > 2)) {
+								(key_array.length == DH_BITS/8 && (msgtype & MSGISBDACK) && (msgtype & MSGISBDONE) && pubcnt == 2 ||
+								 key_array.length == 2 * (DH_BITS/8) && (msgtype & MSGISBDACK) && pubcnt > 2)) {
 
 								if (BDDEBUG)
 									console.log("Ack count matches to pub&bdcnt, enabling send encryption!");
@@ -514,26 +511,26 @@ function processOnMessageData(channel, msg) {
 	}
 
 	let uid = (Uint8ToString(nacl.secretbox.open(StringToUint8(atob(msg.uid)), UIDNONCE, gChannelKey[channel])));
-	let decrypted = Uint8ToString(nacl.secretbox.open(message, noncem.slice(0,24), crypt));
+	let decrypted = nacl.secretbox.open(message, noncem.slice(0,24), crypt);
 	if (decrypted.length < HDRLEN) {
 		//console.log("Dropping")
 		return;
 	}
 
-	let msgsz = StringToUint16Val(decrypted.slice(0, 2)); //includes also version which is zero
-	let sid = StringToUint8(decrypted.slice(2, 10));
-	let keysz = StringToUint16Val(decrypted.slice(10, 12));
+	let msgsz = Uint8ArrayToUint16Val(decrypted.slice(0, 2)); //includes also version which is zero
+	let sid = decrypted.slice(2, 10);
+	let keysz = Uint8ArrayToUint16Val(decrypted.slice(10, 12));
 	
 	//let padsz = decrypted.length - msgsz - keysz;
 	//console.log("RX: Msgsize " + msgsz + " Sid " + sid + " Keysz " + keysz + " Pad size " + padsz);
 
-	let timeU16 = StringToUint16Val(decrypted.slice(12, 14));
-	let weekU16 = StringToUint16Val(decrypted.slice(14, 16));
-	let flagU16 = StringToUint16Val(decrypted.slice(16, HDRLEN));
+	let timeU16 = Uint8ArrayToUint16Val(decrypted.slice(12, 14));
+	let weekU16 = Uint8ArrayToUint16Val(decrypted.slice(14, 16));
+	let flagU16 = Uint8ArrayToUint16Val(decrypted.slice(16, HDRLEN));
 
 	let msgDate = readTimestamp(timeU16, weekU16, flagU16 & ALLISSET);
 
-	message = (decrypted.slice(HDRLEN, msgsz));
+	message = new TextDecoder().decode(decrypted.slice(HDRLEN, msgsz));
 
 	let msgtype = 0;
 	if (flagU16 & ISFULL)
@@ -561,7 +558,7 @@ function processOnMessageData(channel, msg) {
 		initDhBd(channel, uid);
 	}
 	else if (uid != myuid) {
-		if (!gMyDhKey[channel].sid || !isEqualSid(gMyDhKey[channel].sid, sid)) {
+		if (!gMyDhKey[channel].sid || !Uint8ArrayIsEqual(gMyDhKey[channel].sid, sid)) {
 			initSid(channel);
 			initDhBd(channel, myuid);
 			setSid(channel, myuid, sid);
@@ -579,7 +576,7 @@ function processOnMessageData(channel, msg) {
 				setDhPublic(channel, myuid, sid);
 			}
 		}
-		else if(isEqualSid(gSidDb[channel][uid], sid) && !gMyDhKey[channel].public) {
+		else if(Uint8ArrayIsEqual(gSidDb[channel][uid], sid) && !gMyDhKey[channel].public) {
 			if (BDDEBUG)
 				console.log("Resetting mismatching public key for sid " + sid);
 			setDhPublic(channel, myuid, sid);
@@ -587,8 +584,8 @@ function processOnMessageData(channel, msg) {
 	}
 
 	if(gMyDhKey[channel].public && keysz > 0) {
-		const keystr = decrypted.slice(msgsz, msgsz+keysz);
-		msgtype = processBd(channel, myuid, uid, msgtype, keystr);
+		const key_array = decrypted.slice(msgsz, msgsz+keysz);
+		msgtype = processBd(channel, myuid, uid, msgtype, key_array);
 	}
 
 	postMessage(["data", uid, (channel), msgDate.valueOf(), message, msgtype, fsEnabled]);
