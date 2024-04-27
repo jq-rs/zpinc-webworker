@@ -160,6 +160,17 @@ function Uint16ValToString(val) {
 	return str;
 }
 
+function Uint8ArrayToUint16Val(arr) {
+	return ((arr[0] & 0xff) << 8) | (arr[1] & 0xff);
+}
+
+function Uint16ValToUint8Array(val) {
+	let arr = new Uint8Array(2);
+	arr[0] = (val & 0xff00) >> 8;
+	arr[1] = (val & 0xff);
+	return arr;
+}
+
 function initBd(channel, myuid) {
 	gBdDb[channel] = {};
 	gBdAckDb[channel] = {};
@@ -724,31 +735,35 @@ function bdIsZeroes(bd) {
 }
 
 function pseudoRandBytes(byteLength) {
-	if (byteLength <= 0)
-		throw new RangeError('byteLength MUST be > 0');
+    if (byteLength <= 0)
+        throw new RangeError('byteLength MUST be > 0');
 
-	let blen = 0;
-	let bleft = byteLength;
-	let buf = new Uint8Array(byteLength);
-	if (!SEED) {
-		SEED = new Uint8Array(32);
-		self.crypto.getRandomValues(SEED); // avoid using extensive amount of secure random
-	}
-	let val = new BLAKE2b(64, { salt: SALTSTR, personalization: PERSTR, key: SEED });
+    let buf = new Uint8Array(byteLength);
+    if (!SEED) {
+        SEED = new Uint8Array(32);
+        self.crypto.getRandomValues(SEED); // Use a strong initial seed
+    }
 
-	while (bleft > 0) {
-		for (let i = 0; i < 64; i++) {
-			let v = val.digest();
-			buf[blen++] = v[i];
-			bleft--;
-			if (0 == bleft) {
-				SEED = val.digest();
-				break;
-			}
-			val = new BLAKE2b(64, { salt: SALTSTR, personalization: PERSTR, key: val.digest() });
-		}
-	}
-	return buf;
+    let val = new BLAKE2b(64, { salt: SALTSTR, personalization: PERSTR, key: SEED });
+
+    let bleft = byteLength;
+    let blen = 0;
+
+    while (bleft > 0) {
+        let v = val.digest();
+        let len = Math.min(v.length, bleft);
+        buf.set(v.slice(0, len), blen);
+        blen += len;
+        bleft -= len;
+        if (bleft > 0) {
+            val = new BLAKE2b(64, { salt: SALTSTR, personalization: PERSTR, key: val.digest() });
+        }
+    }
+
+    // Update the global seed for next iteration
+    SEED = val.digest();
+
+    return buf;
 }
 
 function getSid(channel, myuid) {
@@ -902,7 +917,7 @@ onmessage = function (e) {
 				let valueofdate = e.data[5];
 				let keysz = 0;
 
-				data = (data);
+				let data_array = new TextEncoder().encode(data);
 
 				let nonce = new Uint8Array(32);
 				self.crypto.getRandomValues(nonce);
@@ -933,18 +948,17 @@ onmessage = function (e) {
 					}
 				}
 
-				const msgsz = data.length + HDRLEN;
-				let newmessage;
-				let encrypted;
+				const msgsz = data_array.length + HDRLEN;
+				let keys_array = new Uint8Array(2*(DH_BITS/8));
 				let crypt;
 				let channel_key;
 				let padlen = 0;
 				if(cmd == "send") {
 					//add public key, if it exists
 					if (gMyDhKey[channel].public) {
-						let pub = Uint8ToString(gMyDhKey[channel].public);
+						let pub = gMyDhKey[channel].public;
 						keysz += pub.length;
-						data += pub;
+						keys_array.set(pub, data_array.length);
 						if (BDDEBUG)
 							console.log("TX: Adding pub key");
 					}
@@ -964,11 +978,11 @@ onmessage = function (e) {
 							}
 						}
 						else {
-							let bd = Uint8ToString(gMyDhKey[channel].bd);
+							let bd = gMyDhKey[channel].bd;
 							if (BDDEBUG)
 								console.log("TX: Bd");
+							keys_array.set(bd, keysz);
 							keysz += bd.length;
-							data += bd;
 						}
 						let pubcnt = Object.keys(gDhDb[channel]).length;
 						let bdcnt = Object.keys(gBdDb[channel]).length;
@@ -1008,37 +1022,41 @@ onmessage = function (e) {
 					break;
 				}
 
+				const csize = HDRLEN + data_array.length + keysz;
+				//padmé padding
+				const padsz = padme(csize) - csize;
 				//version and msg size
-				newmessage = Uint16ValToString(msgsz);
+				let clen = 0;
+				let hdr_data_keys = new Uint8Array(HDRLEN + data_array.length + keysz + padsz);
+				hdr_data_keys.set(Uint16ValToUint8Array(msgsz));
+				clen += 2;
 				//sid
 				const sid = getSid(channel, uid);
-				newmessage += Uint8ToString(sid);
+				hdr_data_keys.set(sid, clen);
+				clen += sid.length;
 				//keysz
-				newmessage += Uint16ValToString(keysz);
+				hdr_data_keys.set(Uint16ValToUint8Array(keysz), clen);
+				clen += 2;
 				//stamps
-				newmessage += Uint16ValToString(timestamp);
-				newmessage += Uint16ValToString(weekstamp);
-				newmessage += Uint16ValToString(flagstamp);
+				hdr_data_keys.set(Uint16ValToUint8Array(timestamp), clen);
+				clen += 2;
+				hdr_data_keys.set(Uint16ValToUint8Array(weekstamp), clen);
+				clen += 2;
+				hdr_data_keys.set(Uint16ValToUint8Array(flagstamp), clen);
+				clen += 2;
+				hdr_data_keys.set(data_array, clen);
+				hdr_data_keys.set(keys_array.slice(0, keysz), clen + data_array.length);
 
-				//message itself
-				newmessage += data;
-
-				const msglen = msgsz + keysz;
-				//padmé padding
-				const padsz = padme(msglen + padlen) - msglen;
-				//console.log("TX: Msgsize " + msgsz + " Sid " + sid + " padding sz " + padsz + " keysz " + keysz)
 				if(padsz > 0) {
-					let padding = pseudoRandBytes(padsz); // avoid using real random for padding
-					newmessage += Uint8ToString(padding);
+					const pad_array = pseudoRandBytes(padsz); // avoid using real random for padding
+					hdr_data_keys.set(pad_array, clen + data_array.length + keysz);
 				}
-				//console.log("Send crypt " + crypt);
-				encrypted = nacl.secretbox(StringToUint8(newmessage), nonce.slice(0,24), crypt);
-				let arr = encrypted;
+				let encrypted = nacl.secretbox(hdr_data_keys, nonce.slice(0,24), crypt);
 
 				// calculate hmac
-				let hmacarr = new Uint8Array(nonce.byteLength + arr.byteLength);
+				let hmacarr = new Uint8Array(nonce.byteLength + encrypted.byteLength);
 				hmacarr.set(nonce, 0);
-				hmacarr.set(arr, nonce.byteLength);
+				hmacarr.set(encrypted, nonce.byteLength);
 
 				let blakehmac = new BLAKE2b(HMAC_LEN, { salt: SALTSTR, personalization: PERSTR, key: channel_key });
 				blakehmac.update(DOMAIN_AUTHKEY);
@@ -1046,12 +1064,12 @@ onmessage = function (e) {
 				blakehmac.update(hmacarr);
 				let hmac = blakehmac.digest();
 
-				let newarr = new Uint8Array(nonce.byteLength + arr.byteLength + hmac.byteLength);
+				let newarr = new Uint8Array(nonce.byteLength + encrypted.byteLength + hmac.byteLength);
 				newarr.set(nonce, 0);
-				newarr.set(arr, nonce.byteLength);
-				newarr.set(hmac, nonce.byteLength + arr.byteLength);
+				newarr.set(encrypted, nonce.byteLength);
+				newarr.set(hmac, nonce.byteLength + encrypted.byteLength);
 				//console.log("Send message " + arr);
-				encrypted = nacl.secretbox(StringToUint8(newmessage), nonce.slice(0,24), crypt);
+				//encrypted = nacl.secretbox(StringToUint8(newmessage), nonce.slice(0,24), crypt);
 				let obj = {
 					uid: btoa(Uint8ToString(nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey[channel]))),
 					channel: btoa(Uint8ToString(nacl.secretbox(StringToUint8(channel), CHANONCE, gChannelKey[channel]))),
