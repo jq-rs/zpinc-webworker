@@ -957,8 +957,8 @@ onmessage = function (e) {
 					//add public key, if it exists
 					if (gMyDhKey[channel].public) {
 						let pub = gMyDhKey[channel].public;
+						keys_array.set(pub);
 						keysz += pub.length;
-						keys_array.set(pub, data_array.length);
 						if (BDDEBUG)
 							console.log("TX: Adding pub key");
 					}
@@ -1024,7 +1024,7 @@ onmessage = function (e) {
 
 				const csize = HDRLEN + data_array.length + keysz;
 				//padmé padding
-				const padsz = padme(csize) - csize;
+				const padsz = padme(csize + padlen) - csize;
 				//version and msg size
 				let clen = 0;
 				let hdr_data_keys = new Uint8Array(HDRLEN + data_array.length + keysz + padsz);
