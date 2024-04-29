@@ -260,7 +260,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
 
 		if (key_array.length == DH_BITS/8 && 0 == (msgtype & MSGISBDONE) && 0 == (msgtype & MSGISBDACK)) {
 			if ((msgtype & MSGISPRESENCE) && 0 == (msgtype & MSGISPRESENCEACK)) {
-				msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
+				//msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
 				if(BDDEBUG)
 					console.log("Request presence ack for " + myuid + "@" + channel);
 			}
@@ -343,7 +343,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
 						console.log("!!! skey invalidated in mismatching bd length!!! pubcnt " + pubcnt);
 					gDhDb[channel][uid] = pub;
 					if ((msgtype & MSGISPRESENCE) && 0 == (msgtype & MSGISPRESENCEACK)) {
-						msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
+						//msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
 						if(BDDEBUG)
 							console.log("Request presence ack for " + myuid + "@" + channel);
 					}
@@ -565,7 +565,7 @@ function processOnMessageData(channel, msg) {
 			if (BDDEBUG)
 				console.log("RX: setting sid to " + sid + " mysid " + gMyDhKey[channel].sid);
 			if (!(msgtype & MSGISPRESENCEACK)) {
-				msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
+				//msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
 			}
 		}
 		if(!gSidDb[channel][uid]) {
