@@ -180,6 +180,7 @@ function initSid(channel) {
 	gMyDhKey[channel].public = null;
 	gMyDhKey[channel].group = null;
 	gMyDhKey[channel].private = null;
+	gMyDhKey[channel].secretAcked = false;
 }
 
 function initDhBd(channel, myuid) {
@@ -314,8 +315,8 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
 			if (prevkey && nextkey) {
 				let step = ristretto255.sub(nextkey, prevkey);
 				gMyDhKey[channel].bd = ristretto255.scalarMult(gMyDhKey[channel].private, step);
-				if (BDDEBUG)
-					console.log("Setting Bd " + gMyDhKey[channel].bd);
+				//if (BDDEBUG)
+				//	console.log("Setting Bd " + gMyDhKey[channel].bd);
 				gBdDb[channel][myuid] = gMyDhKey[channel].bd;
 			}
 
@@ -348,7 +349,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
 							console.log("Request presence ack for " + myuid + "@" + channel);
 					}
 				}
-				else if (gBdDb[channel][uid] == bd && gMyDhKey[channel].secret) {
+				else if (bd != null && gBdDb[channel][uid] != null && Uint8ArrayIsEqual(gBdDb[channel][uid],bd) && gMyDhKey[channel].secret) {
 					//BD matches, do nothing
 					if (BDDEBUG)
 						console.log("BD matches and acked")
@@ -410,7 +411,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
 					}
 				}
 				//if bd handling fails, ignore large handling
-				if (false == init && ((key_array.length == DH_BITS/8 && msgtype & MSGISBDACK) || key_array.length == 2 * (DH_BITS/8))) {
+				if (false == init && ((key_array.length == DH_BITS/8 && (msgtype & MSGISBDACK)) || key_array.length == 2 * (DH_BITS/8))) {
 					if (gMyDhKey[channel].secretAcked) {
 						//do nothing, already acked
 						//console.log("Nothing to do, already acked");
