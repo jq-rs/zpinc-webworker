@@ -162,7 +162,7 @@ function Uint16ValToUint8Array(val) {
 	return arr;
 }
 
-function initBd(channel, myuid) {
+function initBd(channel) {
 	gBdDb[channel] = {};
 	gBdAckDb[channel] = {};
 	gMyDhKey[channel].secret = null;
@@ -180,7 +180,7 @@ function initSid(channel) {
 	gMyDhKey[channel].public = null;
 	gMyDhKey[channel].group = null;
 	gMyDhKey[channel].private = null;
-	gMyDhKey[channel].secretAcked = false;
+	initBd(channel);
 }
 
 function initDhBd(channel, myuid) {
@@ -223,7 +223,9 @@ function setDhPublic(channel, myuid, sid) {
 		gMyDhKey[channel].group = ristretto255.fromHash(digest64B.digest());
 		gMyDhKey[channel].private = ristretto255.scalar.getRandom();
 		gMyDhKey[channel].public = ristretto255.scalarMult(gMyDhKey[channel].private, gMyDhKey[channel].group);
-		gDhDb[channel][myuid] = gMyDhKey[channel].public;
+		gMyDhKey[channel].secret = null;
+		gMyDhKey[channel].secretAcked = false;
+		initBd(channel);
 	}
 }
 
@@ -267,7 +269,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
 			}
 			if(BDDEBUG)
 				console.log("!!! bd invalidated in short message !!!");
-			initBd(channel, myuid);
+			initBd(channel);
 		}
 
 		let pub = key_array.slice(0, DH_BITS/8);
@@ -333,7 +335,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
 					if(BDDEBUG) 
 						console.log("!!! skey invalidated in mismatching bd !!! " + gBdDb[channel][uid] + " vs " + bd);
 					//start again
-					initBd(channel, myuid);
+					initBd(channel);
 					//if(BDDEBUG)
 					//	console.log("!!! skey invalidated in mismatching bd !!!");
 					gDhDb[channel][uid] = pub;
@@ -439,7 +441,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
 						}
 						else {
 							//start again
-							initBd(channel, myuid);
+							initBd(channel);
 							if(BDDEBUG)
 								console.log("!!! bds invalidated in ack !!!");
 							gDhDb[channel][uid] = pub;
