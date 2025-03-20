@@ -183,6 +183,7 @@ function initBd(channel) {
   gMyDhKey[channel].secret = null;
   gMyDhKey[channel].secretAcked = false;
   gMyDhKey[channel].bd = null;
+  gMyDhKey[channel].bdMsgCryptKey = null;
   if (gMyDhKey[channel].fsInformed) {
     processOnForwardSecrecyOff(channel);
     gMyDhKey[channel].fsInformed = false;
@@ -200,19 +201,10 @@ function initSid(channel) {
 
 function initDhBd(channel, myuid) {
   gDhDb[channel] = {};
-  gBdDb[channel] = {};
-  gBdAckDb[channel] = {};
   if (gMyDhKey[channel].public) {
     gDhDb[channel][myuid] = gMyDhKey[channel].public;
   }
-  gMyDhKey[channel].secret = null;
-  gMyDhKey[channel].secretAcked = false;
-  gMyDhKey[channel].bd = null;
-  gMyDhKey[channel].bdMsgCryptKey = null;
-  if (gMyDhKey[channel].fsInformed) {
-    processOnForwardSecrecyOff(channel);
-    gMyDhKey[channel].fsInformed = false;
-  }
+  initBd(channel);
 }
 
 function setDhPublic(channel, myuid, sid) {
@@ -296,14 +288,13 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
         if (BDDEBUG)
           console.log("Request presence ack for " + myuid + "@" + channel);
       }
-      if (BDDEBUG) console.log("!!! bd invalidated in short message !!!");
-      initBd(channel);
+      //if (BDDEBUG) console.log("!!! bd invalidated in short message !!!");
+      //initBd(channel);
     }
 
     let pub = key_array.slice(0, DH_BITS / 8);
-    if (null == gDhDb[channel][uid]) {
-      gDhDb[channel][uid] = pub;
-    } else if (
+    gDhDb[channel][uid] = pub;
+    if (
       key_array.length == DH_BITS / 8 &&
       0 == (msgtype & MSGISBDONE) &&
       gDhDb[channel][uid] &&
@@ -329,9 +320,19 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
       let keys = [];
       for (let userid in dhdb_sorted) {
         if (userid == myuid) {
+          if (BDDEBUG) console.log("Myuid " + myuid + " index " + pubcnt);
           index = pubcnt;
         }
         keys.push(gDhDb[channel][userid]);
+        if (BDDEBUG)
+          console.log(
+            "Key for pubcnt " +
+              pubcnt +
+              " user " +
+              userid +
+              ":" +
+              gDhDb[channel][userid].toString(),
+          );
         pubcnt++;
       }
 
@@ -352,8 +353,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
           gMyDhKey[channel].private,
           step,
         );
-        //if (BDDEBUG)
-        //	console.log("Setting Bd " + gMyDhKey[channel].bd);
+        if (BDDEBUG) console.log("Setting Bd " + gMyDhKey[channel].bd);
         gBdDb[channel][myuid] = gMyDhKey[channel].bd;
       }
 
@@ -1155,9 +1155,13 @@ onmessage = function (e) {
           //add public key, if it exists
           if (gMyDhKey[channel].public) {
             let pub = gMyDhKey[channel].public;
+            gDhDb[channel][uid] = pub;
             keys_array.set(pub);
             keysz += pub.length;
-            if (BDDEBUG) console.log("TX: Adding pub key");
+            if (BDDEBUG)
+              console.log(
+                "TX: Adding pub key " + gMyDhKey[channel].public.toString(),
+              );
           } else {
             //console.log("TX: Pub key is null!");
             padlen += DH_BITS / 8;
@@ -1194,10 +1198,8 @@ onmessage = function (e) {
               gMyDhKey[channel].secret != null
             ) {
               flagstamp |= ISBDACK;
-              if (gBdAckDb[channel][uid] == null) {
-                //console.log("Adding self to bdack db");
-                gBdAckDb[channel][uid] = true;
-              }
+              if (BDDEBUG) console.log("Acking and Adding self to bdack db");
+              gBdAckDb[channel][uid] = true;
             }
           } else {
             padlen += DH_BITS / 8;
