@@ -184,6 +184,7 @@ function initBd(channel) {
   gMyDhKey[channel].secretAcked = false;
   gMyDhKey[channel].bd = null;
   gMyDhKey[channel].bdMsgCryptKey = null;
+  gMyDhKey[channel].bdChannelKey = null;
   if (gMyDhKey[channel].fsInformed) {
     processOnForwardSecrecyOff(channel);
     gMyDhKey[channel].fsInformed = false;
@@ -596,6 +597,12 @@ function isBdMatchedAndAcked(channel, uid, bd) {
 }
 
 function updateBdDbAndCalculateKeys(channel, myuid, uid, bd) {
+  const currentState = {
+    hasMsgCryptKey: Boolean(gMyDhKey[channel]?.bdMsgCryptKey),
+    hasSecret: Boolean(gMyDhKey[channel]?.secret),
+    isSecretAcked: Boolean(gMyDhKey[channel]?.secretAcked),
+  };
+
   if (!gBdDb[channel]) {
     gBdDb[channel] = {};
   }
@@ -606,23 +613,61 @@ function updateBdDbAndCalculateKeys(channel, myuid, uid, bd) {
     myuid,
     uid,
     bdLength: bd.length,
+    currentState,
   });
 
   const { bdcnt, pubcnt, index, xkeys } = collectBdKeys(channel, myuid);
 
-  if (bdcnt !== pubcnt || gMyDhKey[channel].bdMsgCryptKey) {
+  const shouldSkip =
+    bdcnt !== pubcnt ||
+    (currentState.hasMsgCryptKey &&
+      currentState.hasSecret &&
+      currentState.isSecretAcked);
+
+  if (shouldSkip) {
     logger.debug("Skipping key calculation", {
+      reason: bdcnt !== pubcnt ? "count mismatch" : "already initialized",
       bdCount: bdcnt,
       pubCount: pubcnt,
-      hasMsgCryptKey: Boolean(gMyDhKey[channel].bdMsgCryptKey),
+      state: currentState,
     });
     return;
   }
 
-  calculateSecretKey(channel, myuid, index, xkeys);
+  try {
+    calculateSecretKey(channel, myuid, index, xkeys);
+
+    logger.debug("Key calculation completed", {
+      channel,
+      myuid,
+      newState: {
+        hasMsgCryptKey: Boolean(gMyDhKey[channel]?.bdMsgCryptKey),
+        hasSecret: Boolean(gMyDhKey[channel]?.secret),
+        isSecretAcked: Boolean(gMyDhKey[channel]?.secretAcked),
+      },
+    });
+  } catch (error) {
+    logger.error("Key calculation failed", {
+      channel,
+      myuid,
+      error: error.message,
+    });
+
+    gMyDhKey[channel].secret = null;
+    gMyDhKey[channel].bdMsgCryptKey = null;
+    gMyDhKey[channel].bdChannelKey = null;
+  }
 }
 
 function calculateSecretKey(channel, myuid, index, xkeys) {
+  if (gMyDhKey[channel]?.bdMsgCryptKey) {
+    logger.warn("Attempt to recalculate existing keys", {
+      channel,
+      myuid,
+    });
+    return;
+  }
+
   const len = xkeys.length;
 
   logger.debug("Starting secret key calculation", {
@@ -643,14 +688,7 @@ function calculateSecretKey(channel, myuid, index, xkeys) {
     return;
   }
 
-  // Store the calculated secret
   gMyDhKey[channel].secret = finalSkey;
-  logger.info("Secret key stored successfully", {
-    channel,
-    hasSecret: Boolean(gMyDhKey[channel].secret),
-  });
-
-  // Generate crypto keys
   generateCryptoKeys(channel, finalSkey);
 }
 
@@ -825,6 +863,21 @@ function collectBdKeys(channel, myuid) {
   });
 
   return { bdcnt, pubcnt, index, xkeys };
+}
+
+function isBdKeyStateValid(channel) {
+  const state = {
+    hasSecret: Boolean(gMyDhKey[channel]?.secret),
+    hasMsgCryptKey: Boolean(gMyDhKey[channel]?.bdMsgCryptKey),
+    hasChannelKey: Boolean(gMyDhKey[channel]?.bdChannelKey),
+    isSecretAcked: Boolean(gMyDhKey[channel]?.secretAcked),
+  };
+
+  const allSet = state.hasSecret && state.hasMsgCryptKey && state.hasChannelKey;
+  const noneSet =
+    !state.hasSecret && !state.hasMsgCryptKey && !state.hasChannelKey;
+
+  return allSet || noneSet;
 }
 
 function shouldFinalizeAck(channel, key_array, stats, msgtype) {
