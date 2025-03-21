@@ -1029,8 +1029,8 @@ const LogLevel = {
 };
 
 const logger = {
-  level: LogLevel.DEBUG, // Set default level here
-  //level: LogLevel.ERROR, // Set default level here
+  //level: LogLevel.DEBUG, // Set default level here
+  level: LogLevel.ERROR, // Set default level here
 
   error: (message, context = {}) => {
     if (logger.level >= LogLevel.ERROR) {
