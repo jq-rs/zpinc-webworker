@@ -293,12 +293,14 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
     }
 
     let pub = key_array.slice(0, DH_BITS / 8);
-    gDhDb[channel][uid] = pub;
-    if (
-      key_array.length == DH_BITS / 8 &&
-      0 == (msgtype & MSGISBDONE) &&
-      gDhDb[channel][uid] &&
-      gBdDb[channel][uid]
+    if (null == gDhDb[channel][uid]) {
+      gDhDb[channel][uid] = pub;
+    } else if (
+      false == Uint8ArrayIsEqual(gDhDb[channel][uid], pub) ||
+      (key_array.length == DH_BITS / 8 &&
+        0 == (msgtype & MSGISBDONE) &&
+        gDhDb[channel][uid] &&
+        gBdDb[channel][uid])
     ) {
       initDhBd(channel, myuid);
       if (BDDEBUG)
@@ -482,11 +484,7 @@ function processBd(channel, myuid, uid, msgtype, key_array) {
           }
         }
         //if bd handling fails, ignore large handling
-        if (
-          false == init &&
-          ((key_array.length == DH_BITS / 8 && msgtype & MSGISBDACK) ||
-            key_array.length == 2 * (DH_BITS / 8))
-        ) {
+        if (false == init && msgtype & MSGISBDACK) {
           if (gMyDhKey[channel].secretAcked) {
             //do nothing, already acked
             //console.log("Nothing to do, already acked");
