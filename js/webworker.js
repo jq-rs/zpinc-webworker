@@ -263,276 +263,693 @@ function Uint8ArrayIsEqual(arr1, arr2) {
   return arr1.every((value, index) => value === arr2[index]);
 }
 
-const BDDEBUG = false;
 function processBd(channel, myuid, uid, msgtype, key_array) {
-  let init = false;
-
-  if (uid == myuid) {
-    //received own message, init due to resyncing
+  if (uid === myuid) {
+    logger.debug(`Reinitializing DH-BD for own message in channel ${channel}`);
     initDhBd(channel, myuid);
-    init = true;
-  } else if (
-    key_array.length == DH_BITS / 8 ||
-    key_array.length == 2 * (DH_BITS / 8)
-  ) {
-    if (BDDEBUG)
-      console.log("Got " + uid + " public+bd key, len " + key_array.length);
-
-    if (
-      key_array.length == DH_BITS / 8 &&
-      0 == (msgtype & MSGISBDONE) &&
-      0 == (msgtype & MSGISBDACK)
-    ) {
-      if (msgtype & MSGISPRESENCE && 0 == (msgtype & MSGISPRESENCEACK)) {
-        //msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
-        if (BDDEBUG)
-          console.log("Request presence ack for " + myuid + "@" + channel);
-      }
-      //if (BDDEBUG) console.log("!!! bd invalidated in short message !!!");
-      //initBd(channel);
-    }
-
-    let pub = key_array.slice(0, DH_BITS / 8);
-    if (null == gDhDb[channel][uid]) {
-      gDhDb[channel][uid] = pub;
-    } else if (
-      false == Uint8ArrayIsEqual(gDhDb[channel][uid], pub) ||
-      (key_array.length == DH_BITS / 8 &&
-        0 == (msgtype & MSGISBDONE) &&
-        gDhDb[channel][uid] &&
-        gBdDb[channel][uid])
-    ) {
-      initDhBd(channel, myuid);
-      if (BDDEBUG)
-        console.log(
-          "!!! skey invalidated in short message as with existing bd!!!",
-        );
-      gDhDb[channel][uid] = pub;
-      init = true;
-    } else if (false == init) {
-      //calculate bd key
-      if (!gBdDb[channel]) gBdDb[channel] = {};
-      let prevkey = null;
-      let nextkey = null;
-      let index = 0;
-      let pubcnt = 0;
-      let dhdb_sorted = Object.fromEntries(
-        Object.entries(gDhDb[channel]).sort(),
-      );
-      let keys = [];
-      for (let userid in dhdb_sorted) {
-        if (userid == myuid) {
-          if (BDDEBUG) console.log("Myuid " + myuid + " index " + pubcnt);
-          index = pubcnt;
-        }
-        keys.push(gDhDb[channel][userid]);
-        if (BDDEBUG)
-          console.log(
-            "Key for pubcnt " +
-              pubcnt +
-              " user " +
-              userid +
-              ":" +
-              gDhDb[channel][userid].toString(),
-          );
-        pubcnt++;
-      }
-
-      const len = keys.length;
-      if (index == 0) {
-        prevkey = keys[len - 1];
-        nextkey = keys[index + 1];
-      } else if (index == len - 1) {
-        prevkey = keys[index - 1];
-        nextkey = keys[0];
-      } else {
-        prevkey = keys[index - 1];
-        nextkey = keys[index + 1];
-      }
-      if (prevkey && nextkey) {
-        let step = ristretto255.sub(nextkey, prevkey);
-        gMyDhKey[channel].bd = ristretto255.scalarMult(
-          gMyDhKey[channel].private,
-          step,
-        );
-        if (BDDEBUG) console.log("Setting Bd " + gMyDhKey[channel].bd);
-        gBdDb[channel][myuid] = gMyDhKey[channel].bd;
-      }
-
-      if (
-        key_array.length == 2 * (DH_BITS / 8) ||
-        (key_array.length == DH_BITS / 8 && msgtype & MSGISBDONE)
-      ) {
-        let bd = bdSetZeroes();
-        let len = 0;
-        if (key_array.length == 2 * (DH_BITS / 8)) len = (2 * DH_BITS) / 8;
-
-        if (len) bd = key_array.slice(DH_BITS / 8, len);
-
-        if (
-          gBdDb[channel][uid] != null &&
-          !Uint8ArrayIsEqual(gBdDb[channel][uid], bd)
-        ) {
-          if (BDDEBUG)
-            console.log(
-              "!!! skey invalidated in mismatching bd !!! " +
-                gBdDb[channel][uid] +
-                " vs " +
-                bd,
-            );
-          //start again
-          initBd(channel);
-          //if(BDDEBUG)
-          //	console.log("!!! skey invalidated in mismatching bd !!!");
-          gDhDb[channel][uid] = pub;
-        } else if (
-          (pubcnt > 2 && bdIsZeroes(bd)) ||
-          (pubcnt == 2 && !bdIsZeroes(bd))
-        ) {
-          initDhBd(channel, myuid);
-          if (BDDEBUG)
-            console.log(
-              "!!! skey invalidated in mismatching bd length!!! pubcnt " +
-                pubcnt,
-            );
-          gDhDb[channel][uid] = pub;
-          if (msgtype & MSGISPRESENCE && 0 == (msgtype & MSGISPRESENCEACK)) {
-            //msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
-            if (BDDEBUG)
-              console.log("Request presence ack for " + myuid + "@" + channel);
-          }
-        } else if (
-          bd != null &&
-          gBdDb[channel][uid] != null &&
-          Uint8ArrayIsEqual(gBdDb[channel][uid], bd) &&
-          gMyDhKey[channel].secret
-        ) {
-          //BD matches, do nothing
-          if (BDDEBUG) console.log("BD matches and acked");
-        } else {
-          gBdDb[channel][uid] = bd;
-
-          let bdcnt = 0;
-          let xkeys = [];
-          let bddb_sorted = Object.fromEntries(
-            Object.entries(gBdDb[channel]).sort(),
-          );
-          for (let userid in bddb_sorted) {
-            if (BDDEBUG)
-              console.log("!!!BD user " + userid + " bdcnt " + bdcnt);
-            if (userid == myuid) {
-              index = bdcnt;
-            }
-            xkeys.push(gBdDb[channel][userid]);
-            bdcnt++;
-          }
-
-          if (bdcnt == pubcnt && !gMyDhKey[channel].bdMsgCryptKey) {
-            //multiply by len
-            const len = xkeys.length;
-            let skey = ristretto255.scalarMult(
-              gMyDhKey[channel].private,
-              prevkey,
-            );
-            let step = skey;
-
-            for (let j = 0; j < len - 1; j++)
-              skey = ristretto255.add(skey, step);
-            //console.log("Step 1 " + skey1)
-            let sub = 1;
-            for (let i = 0; i < len; i++) {
-              let base = xkeys[(i + index) % len];
-
-              let step = base;
-              for (let j = 0; j < len - sub; j++) {
-                base = ristretto255.add(base, step);
-              }
-
-              skey = ristretto255.add(base, skey);
-              sub++;
-            }
-            //console.log("Skey " + skey);
-
-            //console.log("!!! My skey " + skey.toString(16) + " !!!");
-            gMyDhKey[channel].secret = skey;
-
-            let rnd = new BLAKE2b(32, {
-              salt: SALTSTR,
-              personalization: PERSTR,
-              key: gChannelKey[channel],
-            });
-            rnd.update(gMyDhKey[channel].secret);
-
-            gMyDhKey[channel].bdChannelKey = createChannelKey(rnd.digest());
-            let key = createMessageKey(rnd.digest());
-
-            gMyDhKey[channel].bdMsgCryptKey = key;
-            if (BDDEBUG)
-              console.log(
-                "!!!!Created key msg crypt! " +
-                  key +
-                  " len " +
-                  key.length +
-                  " bdcnt " +
-                  bdcnt +
-                  " pubcnt " +
-                  pubcnt,
-              );
-
-            //wipe unused
-            wipe(rnd);
-          }
-        }
-        //if bd handling fails, ignore large handling
-        if (false == init && msgtype & MSGISBDACK) {
-          if (gMyDhKey[channel].secretAcked) {
-            //do nothing, already acked
-            //console.log("Nothing to do, already acked");
-          } else {
-            if (!gBdAckDb[channel]) gBdAckDb[channel] = {};
-            //check first that pub and bd are ok
-            if (gDhDb[channel][uid] && gBdDb[channel][uid]) {
-              gBdAckDb[channel][uid] = true;
-              let pubcnt = Object.keys(gDhDb[channel]).length;
-              let bdcnt = Object.keys(gBdDb[channel]).length;
-              let ackcnt = Object.keys(gBdAckDb[channel]).length;
-              //ack received from everyone else?
-              if (BDDEBUG)
-                console.log(
-                  "Ackcnt " + ackcnt + " pubcnt " + pubcnt + " bdcnt " + bdcnt,
-                );
-              if (
-                gMyDhKey[channel].bdMsgCryptKey &&
-                gMyDhKey[channel].secret &&
-                pubcnt == bdcnt &&
-                ackcnt == pubcnt &&
-                ((key_array.length == DH_BITS / 8 &&
-                  msgtype & MSGISBDACK &&
-                  msgtype & MSGISBDONE &&
-                  pubcnt == 2) ||
-                  (key_array.length == 2 * (DH_BITS / 8) &&
-                    msgtype & MSGISBDACK &&
-                    pubcnt > 2))
-              ) {
-                if (BDDEBUG)
-                  console.log(
-                    "Ack count matches to pub&bdcnt, enabling send encryption!",
-                  );
-                gMyDhKey[channel].secretAcked = true;
-              }
-            } else {
-              //start again
-              initBd(channel);
-              if (BDDEBUG) console.log("!!! bds invalidated in ack !!!");
-              gDhDb[channel][uid] = pub;
-            }
-          }
-        }
-      }
-    }
+    return msgtype;
   }
+
+  if (!isValidKeyArrayLength(key_array.length)) {
+    return msgtype;
+  }
+
+  const pub = key_array.slice(0, DH_BITS / 8);
+  logger.debug(`Processing BD message from ${uid} in channel ${channel}`, {
+    keyLength: key_array.length,
+    messageType: msgtype,
+  });
+
+  if (shouldInitializeDhBd(channel, uid, pub, msgtype, key_array)) {
+    logger.info(`Reinitializing DH-BD due to key mismatch for ${uid}`);
+    initDhBd(channel, myuid);
+    gDhDb[channel][uid] = pub;
+    return msgtype;
+  }
+
+  if (!gDhDb[channel][uid]) {
+    logger.debug(`Initializing new public key for ${uid}`);
+    gDhDb[channel][uid] = pub;
+    return msgtype;
+  }
+
+  calculateBdKey(channel, myuid, uid);
+
+  if (shouldProcessBdMessage(key_array, msgtype)) {
+    processBdMessage(channel, myuid, uid, key_array, pub, msgtype);
+  }
+
   return msgtype;
 }
+function shouldRequestPresenceAck(msgtype) {
+  // Check if message has presence flag but no presence ack flag
+  const isPresence = Boolean(msgtype & MSGISPRESENCE);
+  const hasPresenceAck = Boolean(msgtype & MSGISPRESENCEACK);
+  const needsAck = isPresence && !hasPresenceAck;
+
+  logger.trace("Presence ack check", {
+    isPresence,
+    hasPresenceAck,
+    needsAck,
+  });
+
+  return needsAck;
+}
+
+function shouldProcessBdMessage(key_array, msgtype) {
+  const isLongMessage = key_array.length === 2 * (DH_BITS / 8);
+  const isShortMessageWithBdFlag =
+    key_array.length === DH_BITS / 8 && msgtype & MSGISBDONE;
+
+  return isLongMessage || isShortMessageWithBdFlag;
+}
+
+function extractBdValue(key_array) {
+  let bd = bdSetZeroes();
+  let len = 0;
+
+  if (key_array.length === 2 * (DH_BITS / 8)) {
+    len = (2 * DH_BITS) / 8;
+    bd = key_array.slice(DH_BITS / 8, len);
+    logger.debug("Extracted BD value from long message", {
+      bdLength: bd.length,
+      messageLength: key_array.length,
+    });
+  } else {
+    logger.debug("Using zero BD value for short message", {
+      messageLength: key_array.length,
+    });
+  }
+
+  return bd;
+}
+
+function shouldResetBd(channel, uid, bd) {
+  // Check if there's an existing BD entry for this user
+  if (!gBdDb[channel] || !gBdDb[channel][uid]) {
+    logger.debug("No existing BD entry to compare", {
+      channel,
+      uid,
+    });
+    return false;
+  }
+
+  const existingBd = gBdDb[channel][uid];
+
+  // If BDs don't match, we need to reset
+  if (!Uint8ArrayIsEqual(existingBd, bd)) {
+    logger.warn("BD mismatch detected", {
+      channel,
+      uid,
+      existingBdLength: existingBd.length,
+      newBdLength: bd.length,
+      existingBdFirst4Bytes: existingBd.slice(0, 4),
+      newBdFirst4Bytes: bd.slice(0, 4),
+    });
+    return true;
+  }
+
+  logger.debug("BD values match, no reset needed", {
+    channel,
+    uid,
+  });
+  return false;
+}
+
+function shouldResetDhBd(channel, uid, bd) {
+  const pubcnt = countParticipants(channel);
+
+  // Case 1: More than 2 participants but BD is all zeros
+  const hasMultipleParticipants = pubcnt > 2;
+  const hasBdZeroes = bdIsZeroes(bd);
+
+  // Case 2: Exactly 2 participants but BD is not zeros
+  const hasExactlyTwoParticipants = pubcnt === 2;
+  const hasBdNonZeroes = !bdIsZeroes(bd);
+
+  const shouldReset =
+    (hasMultipleParticipants && hasBdZeroes) ||
+    (hasExactlyTwoParticipants && hasBdNonZeroes);
+
+  if (shouldReset) {
+    logger.warn("DH-BD reset required", {
+      channel,
+      uid,
+      reason: hasMultipleParticipants
+        ? "Multiple participants with zero BD"
+        : "Two participants with non-zero BD",
+      participantCount: pubcnt,
+      bdIsZero: hasBdZeroes,
+    });
+  }
+
+  return shouldReset;
+}
+
+function countParticipants(channel) {
+  if (!gDhDb[channel]) {
+    logger.debug("No participants found in channel", { channel });
+    return 0;
+  }
+
+  const count = Object.keys(gDhDb[channel]).length;
+
+  logger.trace("Counted participants", {
+    channel,
+    count,
+  });
+
+  return count;
+}
+
+function isValidKeyArrayLength(length) {
+  return length === DH_BITS / 8 || length === 2 * (DH_BITS / 8);
+}
+
+function shouldInitializeDhBd(channel, uid, pub, msgtype, key_array) {
+  const existingKey = gDhDb[channel][uid];
+  if (!existingKey) return false;
+
+  const keyMismatch = !Uint8ArrayIsEqual(existingKey, pub);
+  const isShortMessageWithExistingBd =
+    key_array.length === DH_BITS / 8 &&
+    !(msgtype & MSGISBDONE) &&
+    gDhDb[channel][uid] &&
+    gBdDb[channel][uid];
+
+  if (keyMismatch || isShortMessageWithExistingBd) {
+    logger.debug("DH-BD initialization required", {
+      reason: keyMismatch ? "key mismatch" : "short message with existing BD",
+      channel,
+      uid,
+      messageType: msgtype,
+      keyLength: key_array.length,
+    });
+    return true;
+  }
+
+  return false;
+}
+
+function calculateBdKey(channel, myuid, uid) {
+  if (!gBdDb[channel]) {
+    logger.debug(`Initializing BD database for channel ${channel}`);
+    gBdDb[channel] = {};
+  }
+
+  const { prevkey, nextkey, pubcnt, index } = calculateKeyIndices(
+    channel,
+    myuid,
+  );
+
+  logger.debug(`Calculated key indices for ${myuid}`, {
+    participantCount: pubcnt,
+    userIndex: index,
+  });
+
+  if (prevkey && nextkey) {
+    const step = ristretto255.sub(nextkey, prevkey);
+    gMyDhKey[channel].bd = ristretto255.scalarMult(
+      gMyDhKey[channel].private,
+      step,
+    );
+    gBdDb[channel][myuid] = gMyDhKey[channel].bd;
+    logger.debug(`BD key calculated successfully for ${myuid}`);
+  }
+}
+
+function calculateKeyIndices(channel, myuid) {
+  const dhdb_sorted = Object.fromEntries(Object.entries(gDhDb[channel]).sort());
+  const keys = [];
+  let index = 0;
+  let pubcnt = 0;
+
+  for (let userid in dhdb_sorted) {
+    if (userid === myuid) {
+      index = pubcnt;
+      logger.debug(`User ${myuid} found at index ${index}`);
+    }
+    keys.push(gDhDb[channel][userid]);
+    logger.trace(`Added key for user ${userid} at position ${pubcnt}`, {
+      key: gDhDb[channel][userid].toString(),
+    });
+    pubcnt++;
+  }
+
+  const { prevkey, nextkey } = determineAdjacentKeys(keys, index);
+
+  return { prevkey, nextkey, pubcnt, index };
+}
+
+function determineAdjacentKeys(keys, index) {
+  const len = keys.length;
+  let prevkey, nextkey;
+
+  if (index === 0) {
+    prevkey = keys[len - 1];
+    nextkey = keys[index + 1];
+  } else if (index === len - 1) {
+    prevkey = keys[index - 1];
+    nextkey = keys[0];
+  } else {
+    prevkey = keys[index - 1];
+    nextkey = keys[index + 1];
+  }
+
+  logger.debug(`Adjacent keys determined`, {
+    position: index,
+    totalParticipants: len,
+  });
+
+  return { prevkey, nextkey };
+}
+
+function processBdMessage(channel, myuid, uid, key_array, pub, msgtype) {
+  const bd = extractBdValue(key_array);
+
+  if (shouldResetBd(channel, uid, bd)) {
+    logger.warn(`BD mismatch detected for ${uid}, resetting BD state`, {
+      channel,
+      existingBd: gBdDb[channel][uid],
+      receivedBd: bd,
+    });
+    initBd(channel);
+    gDhDb[channel][uid] = pub;
+    return;
+  }
+
+  if (shouldResetDhBd(channel, uid, bd)) {
+    logger.warn("Resetting DH-BD state", {
+      channel,
+      uid,
+    });
+    initDhBd(channel, myuid);
+    gDhDb[channel][uid] = pub;
+
+    if (shouldRequestPresenceAck(msgtype)) {
+      logger.debug("Requesting presence acknowledgment", {
+        uid: myuid,
+        channel,
+      });
+    }
+    return;
+  }
+
+  // Only skip if we have everything already
+  if (
+    isBdMatchedAndAcked(channel, uid, bd) &&
+    gMyDhKey[channel].secret &&
+    gMyDhKey[channel].secretAcked
+  ) {
+    logger.debug("BD fully processed and acknowledged", {
+      channel,
+      uid,
+      hasSecret: Boolean(gMyDhKey[channel].secret),
+      isSecretAcked: Boolean(gMyDhKey[channel].secretAcked),
+    });
+    return;
+  }
+
+  updateBdDbAndCalculateKeys(channel, myuid, uid, bd);
+
+  if (msgtype & MSGISBDACK) {
+    processBdAck(channel, uid, key_array, pub, msgtype);
+  }
+}
+
+function isBdMatchedAndAcked(channel, uid, bd) {
+  // Just check BD match
+  if (!bd || !gBdDb[channel]?.[uid]) {
+    return false;
+  }
+
+  const bdsMatch = Uint8ArrayIsEqual(gBdDb[channel][uid], bd);
+
+  logger.debug("BD match status", {
+    channel,
+    uid,
+    bdsMatch,
+    hasExistingBd: Boolean(gBdDb[channel]?.[uid]),
+  });
+
+  return bdsMatch;
+}
+
+function updateBdDbAndCalculateKeys(channel, myuid, uid, bd) {
+  if (!gBdDb[channel]) {
+    gBdDb[channel] = {};
+  }
+  gBdDb[channel][uid] = bd;
+
+  logger.debug("Updated BD database", {
+    channel,
+    myuid,
+    uid,
+    bdLength: bd.length,
+  });
+
+  const { bdcnt, pubcnt, index, xkeys } = collectBdKeys(channel, myuid);
+
+  if (bdcnt !== pubcnt || gMyDhKey[channel].bdMsgCryptKey) {
+    logger.debug("Skipping key calculation", {
+      bdCount: bdcnt,
+      pubCount: pubcnt,
+      hasMsgCryptKey: Boolean(gMyDhKey[channel].bdMsgCryptKey),
+    });
+    return;
+  }
+
+  calculateSecretKey(channel, myuid, index, xkeys);
+}
+
+function calculateSecretKey(channel, myuid, index, xkeys) {
+  const len = xkeys.length;
+
+  logger.debug("Starting secret key calculation", {
+    channel,
+    keyCount: len,
+    index,
+  });
+
+  let skey = calculateInitialSecretKey(channel, len, myuid);
+  if (!skey) {
+    logger.error("Initial secret key calculation failed");
+    return;
+  }
+
+  let finalSkey = calculateFinalSecretKey(skey, xkeys, index, len);
+  if (!finalSkey) {
+    logger.error("Final secret key calculation failed");
+    return;
+  }
+
+  // Store the calculated secret
+  gMyDhKey[channel].secret = finalSkey;
+  logger.info("Secret key stored successfully", {
+    channel,
+    hasSecret: Boolean(gMyDhKey[channel].secret),
+  });
+
+  // Generate crypto keys
+  generateCryptoKeys(channel, finalSkey);
+}
+
+function generateCryptoKeys(channel, skey) {
+  if (!channel || !skey) {
+    logger.error("Invalid inputs for crypto key generation", {
+      hasChannel: Boolean(channel),
+      hasSecretKey: Boolean(skey),
+    });
+    return;
+  }
+
+  if (!gChannelKey[channel]) {
+    logger.error("Missing channel key", { channel });
+    return;
+  }
+
+  try {
+    // Create random number generator with channel key
+    let rnd = new BLAKE2b(32, {
+      salt: SALTSTR,
+      personalization: PERSTR,
+      key: gChannelKey[channel],
+    });
+
+    // Update with secret key
+    rnd.update(skey);
+    const digest = rnd.digest();
+
+    if (!digest) {
+      logger.error("Failed to generate digest");
+      return;
+    }
+
+    // Generate channel and message keys
+    gMyDhKey[channel].bdChannelKey = createChannelKey(digest);
+    gMyDhKey[channel].bdMsgCryptKey = createMessageKey(digest);
+
+    const keysGenerated = Boolean(
+      gMyDhKey[channel].bdChannelKey && gMyDhKey[channel].bdMsgCryptKey,
+    );
+
+    if (!keysGenerated) {
+      logger.error("Failed to generate one or both crypto keys");
+      return;
+    }
+
+    logger.info("Crypto keys generated successfully", {
+      channel,
+      hasChannelKey: Boolean(gMyDhKey[channel].bdChannelKey),
+      hasMessageKey: Boolean(gMyDhKey[channel].bdMsgCryptKey),
+    });
+
+    // Clean up sensitive data
+    wipe(rnd);
+    wipe(digest);
+  } catch (error) {
+    logger.error("Error generating crypto keys", {
+      channel,
+      error: error.message,
+    });
+  }
+}
+
+function calculateFinalSecretKey(skey, xkeys, index, len) {
+  if (!skey || !xkeys || !xkeys.length) {
+    logger.error("Invalid inputs for final secret calculation", {
+      hasSkey: Boolean(skey),
+      hasXkeys: Boolean(xkeys),
+      xkeysLength: xkeys?.length,
+    });
+    return null;
+  }
+
+  try {
+    let resultSkey = skey;
+    let sub = 1;
+
+    for (let i = 0; i < len; i++) {
+      let base = xkeys[(i + index) % len];
+      if (!base) {
+        logger.error("Missing base key in xkeys array", {
+          index: i,
+          adjustedIndex: (i + index) % len,
+        });
+        return null;
+      }
+
+      let step = base;
+      for (let j = 0; j < len - sub; j++) {
+        base = ristretto255.add(base, step);
+        if (!base) {
+          logger.error("Failed to add step to base", {
+            iteration: j,
+            subValue: sub,
+          });
+          return null;
+        }
+      }
+
+      resultSkey = ristretto255.add(base, resultSkey);
+      if (!resultSkey) {
+        logger.error("Failed to add base to result", {
+          iteration: i,
+        });
+        return null;
+      }
+
+      sub++;
+    }
+
+    logger.debug("Final secret key calculated successfully", {
+      originalIndex: index,
+      keyCount: len,
+    });
+
+    return resultSkey;
+  } catch (error) {
+    logger.error("Error in final secret calculation", {
+      error: error.message,
+      index,
+      len,
+    });
+    return null;
+  }
+}
+
+function calculateInitialSecretKey(channel, len, myuid) {
+  const { prevkey } = calculateKeyIndices(channel, myuid);
+  if (!prevkey) {
+    logger.error("Previous key not found");
+    return null;
+  }
+
+  let skey = ristretto255.scalarMult(gMyDhKey[channel].private, prevkey);
+  let step = skey;
+
+  for (let j = 0; j < len - 1; j++) {
+    skey = ristretto255.add(skey, step);
+  }
+
+  return skey;
+}
+
+function collectBdKeys(channel, myuid) {
+  let bdcnt = 0;
+  let index = 0;
+  const xkeys = [];
+
+  // Sort BD database entries for consistent ordering
+  const bddb_sorted = Object.fromEntries(Object.entries(gBdDb[channel]).sort());
+
+  // Collect BD keys
+  for (let userid in bddb_sorted) {
+    if (userid === myuid) {
+      index = bdcnt;
+    }
+    logger.trace("Collecting BD key", {
+      userid,
+      bdIndex: bdcnt,
+    });
+    xkeys.push(gBdDb[channel][userid]);
+    bdcnt++;
+  }
+
+  const pubcnt = Object.keys(gDhDb[channel]).length;
+
+  logger.debug("Collected BD keys", {
+    bdCount: bdcnt,
+    pubCount: pubcnt,
+    userIndex: index,
+  });
+
+  return { bdcnt, pubcnt, index, xkeys };
+}
+
+function shouldFinalizeAck(channel, key_array, stats, msgtype) {
+  // Check if all required components are present
+  const hasRequiredComponents =
+    gMyDhKey[channel].bdMsgCryptKey && gMyDhKey[channel].secret;
+
+  // Check if counts match
+  const countsMatch =
+    stats.publicKeyCount === stats.bdKeyCount &&
+    stats.ackCount === stats.publicKeyCount;
+
+  // Check message type conditions
+  const isShortMessageAck =
+    stats.publicKeyCount === 2 &&
+    key_array.length === DH_BITS / 8 &&
+    msgtype & MSGISBDACK &&
+    msgtype & MSGISBDONE;
+
+  const isLongMessageAck =
+    stats.publicKeyCount > 2 &&
+    key_array.length === 2 * (DH_BITS / 8) &&
+    msgtype & MSGISBDACK;
+
+  const hasValidMessageType = isShortMessageAck || isLongMessageAck;
+
+  const shouldFinalize =
+    hasRequiredComponents && countsMatch && hasValidMessageType;
+
+  logger.debug("BD acknowledgment finalization check", {
+    channel,
+    hasRequiredComponents,
+    countsMatch,
+    isShortMessageAck,
+    isLongMessageAck,
+    stats,
+    msgtype,
+  });
+
+  return shouldFinalize;
+}
+
+function processBdAck(channel, uid, key_array, pub, msgtype) {
+  if (gMyDhKey[channel].secretAcked) {
+    logger.debug(`BD already acknowledged for ${uid}`);
+    return;
+  }
+
+  if (!gBdAckDb[channel]) {
+    gBdAckDb[channel] = {};
+  }
+
+  if (!gDhDb[channel][uid] || !gBdDb[channel][uid]) {
+    logger.warn(
+      `Missing required keys for BD acknowledgment, resetting state`,
+      {
+        channel,
+        uid,
+      },
+    );
+    initBd(channel);
+    gDhDb[channel][uid] = pub;
+    return;
+  }
+
+  gBdAckDb[channel][uid] = true;
+
+  const stats = {
+    publicKeyCount: Object.keys(gDhDb[channel]).length,
+    bdKeyCount: Object.keys(gBdDb[channel]).length,
+    ackCount: Object.keys(gBdAckDb[channel]).length,
+  };
+
+  logger.debug(`BD acknowledgment processed`, stats);
+
+  if (shouldFinalizeAck(channel, key_array, stats, msgtype)) {
+    logger.info(
+      `BD key exchange completed successfully for channel ${channel}`,
+    );
+    gMyDhKey[channel].secretAcked = true;
+  }
+}
+
+const LogLevel = {
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3,
+  TRACE: 4,
+};
+
+const logger = {
+  //level: LogLevel.DEBUG, // Set default level here
+  level: LogLevel.ERROR, // Set default level here
+
+  error: (message, context = {}) => {
+    if (logger.level >= LogLevel.ERROR) {
+      console.log("[ERROR]", message, context);
+    }
+  },
+
+  warn: (message, context = {}) => {
+    if (logger.level >= LogLevel.WARN) {
+      console.log("[WARN]", message, context);
+    }
+  },
+
+  info: (message, context = {}) => {
+    if (logger.level >= LogLevel.INFO) {
+      console.log("[INFO]", message, context);
+    }
+  },
+
+  debug: (message, context = {}) => {
+    if (logger.level >= LogLevel.DEBUG) {
+      console.log("[DEBUG]", message, context);
+    }
+  },
+
+  trace: (message, context = {}) => {
+    if (logger.level >= LogLevel.TRACE) {
+      console.log("[TRACE]", message, context);
+    }
+  },
+};
 
 function processOnMessageData(channel, msg) {
   //sanity
@@ -669,10 +1086,9 @@ function processOnMessageData(channel, msg) {
       initSid(channel);
       initDhBd(channel, myuid);
       setSid(channel, myuid, sid);
-      if (BDDEBUG)
-        console.log(
-          "RX: setting sid to " + sid + " mysid " + gMyDhKey[channel].sid,
-        );
+      logger.trace(
+        "RX: setting sid to " + sid + " mysid " + gMyDhKey[channel].sid,
+      );
       if (!(msgtype & MSGISPRESENCEACK)) {
         //msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
       }
@@ -680,15 +1096,14 @@ function processOnMessageData(channel, msg) {
     if (!gSidDb[channel][uid]) {
       gSidDb[channel][uid] = sid;
       if (gMyDhKey[channel].public) {
-        if (BDDEBUG) console.log("Resetting public key for sid " + sid);
+        logger.debug("Resetting public key for sid " + sid);
         setDhPublic(channel, myuid, sid);
       }
     } else if (
       Uint8ArrayIsEqual(gSidDb[channel][uid], sid) &&
       !gMyDhKey[channel].public
     ) {
-      if (BDDEBUG)
-        console.log("Resetting mismatching public key for sid " + sid);
+      logger.debug("Resetting mismatching public key for sid " + sid);
       setDhPublic(channel, myuid, sid);
     }
   }
@@ -1156,10 +1571,9 @@ onmessage = function (e) {
             gDhDb[channel][uid] = pub;
             keys_array.set(pub);
             keysz += pub.length;
-            if (BDDEBUG)
-              console.log(
-                "TX: Adding pub key " + gMyDhKey[channel].public.toString(),
-              );
+            logger.trace("TX: Adding pub key", {
+              key: gMyDhKey[channel].public,
+            });
           } else {
             //console.log("TX: Pub key is null!");
             padlen += DH_BITS / 8;
@@ -1169,34 +1583,25 @@ onmessage = function (e) {
             let sidcnt = Object.keys(gSidDb[channel]).length;
             if (bdIsZeroes(gMyDhKey[channel].bd)) {
               if (sidcnt == 2) {
-                if (BDDEBUG) console.log("Adding ISDBONE flag");
                 flagstamp |= ISBDONE;
+                logger.trace("Setting BDONE flag", { flagstamp: flagstamp });
                 padlen += DH_BITS / 8;
               }
             } else {
               let bd = gMyDhKey[channel].bd;
-              if (BDDEBUG) console.log("TX: Bd " + bd);
+              logger.trace("TX: Bd", { bd: bd });
               keys_array.set(bd, keysz);
               keysz += bd.length;
             }
             let pubcnt = Object.keys(gDhDb[channel]).length;
             let bdcnt = Object.keys(gBdDb[channel]).length;
-            if (BDDEBUG)
-              console.log(
-                "During send sidcnt " +
-                  sidcnt +
-                  " pubcnt " +
-                  pubcnt +
-                  " bdcnt " +
-                  bdcnt,
-              );
             if (
               sidcnt == pubcnt &&
               pubcnt == bdcnt &&
               gMyDhKey[channel].secret != null
             ) {
               flagstamp |= ISBDACK;
-              if (BDDEBUG) console.log("Acking and Adding self to bdack db");
+              logger.trace("Setting BDACK flag", { flagstamp: flagstamp });
               gBdAckDb[channel][uid] = true;
             }
           } else {
