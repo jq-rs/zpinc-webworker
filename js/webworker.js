@@ -1201,8 +1201,8 @@ function processOnMessageData(channel, msg) {
       logger.trace(
         "RX: setting sid to " + sid + " mysid " + gMyDhKey[channel].sid,
       );
-      if (!(msgtype & MSGISPRESENCEACK)) {
-        //msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
+      if (msgtype & MSGISPRESENCE && !(msgtype & MSGISPRESENCEACK)) {
+        msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
       }
     }
     if (!gSidDb[channel][uid]) {
