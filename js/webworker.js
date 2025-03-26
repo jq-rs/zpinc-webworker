@@ -64,7 +64,7 @@ const MSGISMULTIPART = 0x1 << 3;
 const MSGISFIRST = 0x1 << 4;
 const MSGISLAST = 0x1 << 5;
 const MSGISPRESENCEACK = 0x1 << 6;
-const MSGPRESACKREQ = 0x1 << 7;
+const RESERVED = 0x1 << 7;
 const MSGISBDONE = 0x1 << 8;
 const MSGISBDACK = 0x1 << 9;
 
@@ -1201,9 +1201,6 @@ function processOnMessageData(channel, msg) {
       logger.trace(
         "RX: setting sid to " + sid + " mysid " + gMyDhKey[channel].sid,
       );
-      if (msgtype & MSGISPRESENCE && !(msgtype & MSGISPRESENCEACK)) {
-        msgtype |= MSGPRESACKREQ; // inform upper layer about presence ack requirement
-      }
     }
     if (!gSidDb[channel][uid]) {
       gSidDb[channel][uid] = sid;
