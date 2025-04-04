@@ -42,15 +42,8 @@ const DOMAIN_ENCKEY = StringToUint8("Zpinc-WebWorkerEncryptDom!v1");
 const DOMAIN_CHANKEY = StringToUint8("Zpinc-WebWorkerChannelDom!v1");
 const DOMAIN_AUTHKEY = StringToUint8("Zpinc-WebWorkerAuthDom!v1");
 
-/* For static uid and channel we use static nonces */
-const UIDNONCE = new Uint8Array([
-  2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
-  73, 79, 83, 89,
-]);
-const CHANONCE = new Uint8Array([
-  0x24, 0x3f, 0x6a, 0x88, 0x85, 0xa3, 0x08, 0xd3, 0x13, 0x19, 0x8a, 0x2e, 0x03,
-  0x70, 0x73, 0x44, 0xa4, 0x09, 0x38, 0x22, 0x29, 0x9f, 0x31, 0xd0,
-]);
+const INFO_CHANNEL = StringToUint8("Zpinc-ChannelDerivation-v1");
+const INFO_UID = StringToUint8("Zpinc-UidDerivation-v1");
 const SALTSTR = StringToUint8("ZpincSaltDomain1");
 const PERSTR = StringToUint8("ZpincAppDomainv1");
 const PERBDSTR = StringToUint8("ZpincBdDomain!v1");
@@ -119,22 +112,16 @@ function readTimestamp(timestamp, weekstamp, flagstamp) {
   return time;
 }
 
-function isEqualHmacs(hmac, rhmac) {
-  let mac1 = new BLAKE2b(HMAC_LEN);
-  let mac2 = new BLAKE2b(HMAC_LEN);
-
-  mac1.update(hmac);
-  mac2.update(rhmac);
-
-  let hmac1 = mac1.digest();
-  let hmac2 = mac2.digest();
-
-  for (let i = 0; i < hmac1.byteLength; i++) {
-    if (hmac1[i] != hmac2[i]) {
-      return false;
-    }
+function isEqualHmacs(hmac1, hmac2) {
+  if (!hmac1 || !hmac2 || hmac1.length !== hmac2.length) {
+    return false;
   }
-  return true;
+
+  let diff = 0;
+  for (let i = 0; i < hmac1.length; i++) {
+    diff |= hmac1[i] ^ hmac2[i];
+  }
+  return diff === 0;
 }
 
 function StringToUint8(str) {
@@ -1140,13 +1127,7 @@ function processOnMessageData(channel, msg) {
     //console.log("Msg crypt matches " + crypt);
   }
 
-  let uid = Uint8ToString(
-    nacl.secretbox.open(
-      StringToUint8(atob(msg.uid)),
-      UIDNONCE,
-      gChannelKey[channel],
-    ),
-  );
+  let uid = decryptUid(msg.uid, gChannelKey[channel]);
   let decrypted = nacl.secretbox.open(message, noncem.slice(0, 24), crypt);
   if (decrypted.length < HDRLEN) {
     //console.log("Dropping")
@@ -1179,13 +1160,7 @@ function processOnMessageData(channel, msg) {
   if (flagU16 & ISBDONE) msgtype |= MSGISBDONE;
   if (flagU16 & ISBDACK) msgtype |= MSGISBDACK;
 
-  const myuid = Uint8ToString(
-    nacl.secretbox.open(
-      StringToUint8(atob(gMyUid[channel])),
-      UIDNONCE,
-      gChannelKey[channel],
-    ),
-  );
+  const myuid = decryptUid(gMyUid[channel], gChannelKey[channel]);
   if (myuid == uid) {
     //resync
     initSid(channel);
@@ -1251,13 +1226,7 @@ function msgEncode(obj) {
 
 function processOnClose(channel) {
   gWebSocket[channel].close();
-  let uid = Uint8ToString(
-    nacl.secretbox.open(
-      StringToUint8(atob(gMyUid[channel])),
-      UIDNONCE,
-      gChannelKey[channel],
-    ),
-  );
+  let uid = decryptUid(gMyUid[channel], gChannelKey[channel]);
   postMessage(["close", uid, channel]);
 }
 
@@ -1267,13 +1236,7 @@ function processOnOpen(channel, reopen) {
     '{"uid":"' + gMyUid[channel] + '","channel":"' + gMyChannel[channel] + '"}';
   gWebSocket[channel].send(join);
 
-  let uid = Uint8ToString(
-    nacl.secretbox.open(
-      StringToUint8(atob(gMyUid[channel])),
-      UIDNONCE,
-      gChannelKey[channel],
-    ),
-  );
+  let uid = decryptUid(gMyUid[channel], gChannelKey[channel]);
   if (false == reopen) {
     postMessage(["init", uid, channel]);
   } else {
@@ -1282,24 +1245,12 @@ function processOnOpen(channel, reopen) {
 }
 
 function processOnForwardSecrecy(channel, bdKey) {
-  let uid = Uint8ToString(
-    nacl.secretbox.open(
-      StringToUint8(atob(gMyUid[channel])),
-      UIDNONCE,
-      gChannelKey[channel],
-    ),
-  );
+  let uid = decryptUid(gMyUid[channel], gChannelKey[channel]);
   postMessage(["forwardsecrecy", uid, channel, bdKey.toString(16)]);
 }
 
 function processOnForwardSecrecyOff(channel) {
-  let uid = Uint8ToString(
-    nacl.secretbox.open(
-      StringToUint8(atob(gMyUid[channel])),
-      UIDNONCE,
-      gChannelKey[channel],
-    ),
-  );
+  let uid = decryptUid(gMyUid[channel], gChannelKey[channel]);
   postMessage(["forwardsecrecyoff", uid, channel]);
 }
 
@@ -1529,26 +1480,14 @@ onmessage = function (e) {
         let messageKey = createMessageKey(passwd);
 
         gMsgCryptKey[channel] = messageKey;
-        gMyUid[channel] = btoa(
-          Uint8ToString(
-            nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey[channel]),
-          ),
-        );
+        gMyUid[channel] = encryptUid(uid, gChannelKey[channel]);
 
         //wipe unused
         wipe(salt);
         wipe(passwd);
         prevBdKey = null;
 
-        gMyChannel[channel] = btoa(
-          Uint8ToString(
-            nacl.secretbox(
-              StringToUint8(channel),
-              CHANONCE,
-              gChannelKey[channel],
-            ),
-          ),
-        );
+        gMyChannel[channel] = encryptChannel(channel, gChannelKey[channel]);
         openSocket(channel, port, addr);
       }
       break;
@@ -1573,20 +1512,8 @@ onmessage = function (e) {
         //wipe unused
         prevBdKey = "";
 
-        let myuid = btoa(
-          Uint8ToString(
-            nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey[channel]),
-          ),
-        );
-        let mychannel = btoa(
-          Uint8ToString(
-            nacl.secretbox(
-              StringToUint8(channel),
-              CHANONCE,
-              gChannelKey[channel],
-            ),
-          ),
-        );
+        let myuid = encryptUid(uid, gChannelKey[channel]);
+        let mychannel = encryptChannel(channel, gChannelKey[channel]);
 
         // verify that we have already opened the channel earlier
         if (gMyUid[channel] === myuid && gMyChannel[channel] === mychannel) {
@@ -1611,20 +1538,8 @@ onmessage = function (e) {
         //wipe unused
         prevBdKey = "";
 
-        let myuid = btoa(
-          Uint8ToString(
-            nacl.secretbox(StringToUint8(uid), UIDNONCE, gChannelKey[channel]),
-          ),
-        );
-        let mychannel = btoa(
-          Uint8ToString(
-            nacl.secretbox(
-              StringToUint8(channel),
-              CHANONCE,
-              gChannelKey[channel],
-            ),
-          ),
-        );
+        let myuid = encryptUid(uid, gChannelKey[channel]);
+        let mychannel = encryptChannel(channel, gChannelKey[channel]);
 
         // verify that we have already opened the channel earlier
         if (gMyUid[channel] === myuid && gMyChannel[channel] === mychannel) {
@@ -1827,24 +1742,8 @@ onmessage = function (e) {
         //console.log("Send message " + arr);
         //encrypted = nacl.secretbox(StringToUint8(newmessage), nonce.slice(0,24), crypt);
         let obj = {
-          uid: btoa(
-            Uint8ToString(
-              nacl.secretbox(
-                StringToUint8(uid),
-                UIDNONCE,
-                gChannelKey[channel],
-              ),
-            ),
-          ),
-          channel: btoa(
-            Uint8ToString(
-              nacl.secretbox(
-                StringToUint8(channel),
-                CHANONCE,
-                gChannelKey[channel],
-              ),
-            ),
-          ),
+          uid: encryptUid(uid, gChannelKey[channel]),
+          channel: encryptChannel(channel, gChannelKey[channel]),
           message: newarr,
         };
         let encodedMsg = msgEncode(obj);
@@ -1874,3 +1773,91 @@ onmessage = function (e) {
       break;
   }
 };
+
+function deriveKey(inputKey, info, length = 32) {
+  // PRK = HMAC-Hash(salt, IKM)
+  const prk = new BLAKE2b(32, {
+    salt: SALTSTR,
+    personalization: PERSTR,
+    key: inputKey,
+  }).digest();
+
+  // Output = T(1) | T(2) | T(3) | ... where T(N) = HMAC-Hash(PRK, T(N-1) | info | N)
+  let output = new Uint8Array(length);
+  let T = new Uint8Array(0);
+  let pos = 0;
+  let counter = 1;
+
+  while (pos < length) {
+    const hmac = new BLAKE2b(32, {
+      key: prk,
+    });
+
+    hmac.update(T);
+    hmac.update(info);
+    hmac.update(new Uint8Array([counter]));
+
+    T = hmac.digest();
+
+    const remaining = length - pos;
+    output.set(T.slice(0, Math.min(32, remaining)), pos);
+    pos += 32;
+    counter++;
+  }
+
+  return output;
+}
+
+function encryptChannel(channel, channelKey) {
+  // Derive a deterministic but secure key for this specific channel
+  const derivedKey = deriveKey(channelKey, INFO_CHANNEL, 56);
+
+  // Use the derived key for encryption
+  return btoa(
+    Uint8ToString(
+      nacl.secretbox(
+        StringToUint8(channel),
+        derivedKey.slice(0, 24), // Use first 24 bytes as nonce
+        derivedKey.slice(24), // Use remaining bytes as key
+      ),
+    ),
+  );
+}
+
+// Use it for UID encryption:
+function encryptUid(uid, channelKey) {
+  // Derive a deterministic but secure key for this specific UID
+  const derivedKey = deriveKey(channelKey, INFO_UID, 56);
+
+  return btoa(
+    Uint8ToString(
+      nacl.secretbox(
+        StringToUint8(uid),
+        derivedKey.slice(0, 24), // Use first 24 bytes as nonce
+        derivedKey.slice(24), // Use remaining bytes as key
+      ),
+    ),
+  );
+}
+
+function decryptChannel(encrypted, channelKey) {
+  const derivedKey = deriveKey(channelKey, INFO_CHANNEL, 56);
+  return Uint8ToString(
+    nacl.secretbox.open(
+      StringToUint8(atob(encrypted)),
+      derivedKey.slice(0, 24),
+      derivedKey.slice(24),
+    ),
+  );
+}
+
+function decryptUid(encrypted, channelKey) {
+  const derivedKey = deriveKey(channelKey, INFO_UID, 56);
+  return Uint8ToString(
+    nacl.secretbox.open(
+      StringToUint8(atob(encrypted)),
+      derivedKey.slice(0, 24),
+      derivedKey.slice(24),
+    ),
+  );
+}
