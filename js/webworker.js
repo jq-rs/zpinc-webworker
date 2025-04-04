@@ -43,7 +43,9 @@ const DOMAIN_CHANKEY = StringToUint8("Zpinc-WebWorkerChannelDom!v1");
 const DOMAIN_AUTHKEY = StringToUint8("Zpinc-WebWorkerAuthDom!v1");
 
 const INFO_CHANNEL = StringToUint8("Zpinc-ChannelDerivation-v1");
+const INFO_CHANNEL_NONCE = StringToUint8("Zpinc-ChannelNonceDerivation-v1");
 const INFO_UID = StringToUint8("Zpinc-UidDerivation-v1");
+const INFO_UID_NONCE = StringToUint8("Zpinc-UidNonceDerivation-v1");
 const SALTSTR = StringToUint8("ZpincSaltDomain1");
 const PERSTR = StringToUint8("ZpincAppDomainv1");
 const PERBDSTR = StringToUint8("ZpincBdDomain!v1");
@@ -1300,28 +1302,11 @@ function openSocket(channel, port, addr, reopen = false) {
 }
 
 function createChannelKey(key) {
-  if (key.length > 32) throw new RangeError("Too large key " + key.length);
-  let round = new BLAKE2b(32, {
-    salt: SALTSTR,
-    personalization: PERSTR,
-    key: key,
-  });
-  round.update(DOMAIN_CHANKEY);
-  let blakecb = new BLAKE2b(32, key);
-  blakecb.update(DOMAIN_CHANKEY);
-  blakecb.update(round.digest());
-  return blakecb.digest();
+  return deriveKey(key, DOMAIN_CHANKEY);
 }
 
 function createMessageKey(key) {
-  if (key.length > 32) throw new RangeError("Too large key " + key.length);
-  let blakecbc = new BLAKE2b(32, {
-    salt: SALTSTR,
-    personalization: PERSTR,
-    key: key,
-  });
-  blakecbc.update(DOMAIN_ENCKEY);
-  return blakecbc.digest();
+  return deriveKey(key, DOMAIN_ENCKEY);
 }
 
 const MAXRND = 0x3ff;
@@ -1809,55 +1794,44 @@ function deriveKey(inputKey, info, length = 32) {
 }
 
 function encryptChannel(channel, channelKey) {
-  // Derive a deterministic but secure key for this specific channel
-  const derivedKey = deriveKey(channelKey, INFO_CHANNEL, 56);
+  const key = deriveKey(channelKey, INFO_CHANNEL);
+  const nonce = deriveKey(channelKey, INFO_CHANNEL_NONCE, 24);
 
-  // Use the derived key for encryption
-  return btoa(
-    Uint8ToString(
-      nacl.secretbox(
-        StringToUint8(channel),
-        derivedKey.slice(0, 24), // Use first 24 bytes as nonce
-        derivedKey.slice(24), // Use remaining bytes as key
-      ),
-    ),
-  );
+  const ciphertext = nacl.secretbox(StringToUint8(channel), nonce, key);
+
+  return btoa(Uint8ToString(ciphertext));
 }
 
-// Use it for UID encryption:
 function encryptUid(uid, channelKey) {
-  // Derive a deterministic but secure key for this specific UID
-  const derivedKey = deriveKey(channelKey, INFO_UID, 56);
+  const key = deriveKey(channelKey, INFO_UID);
+  const nonce = deriveKey(channelKey, INFO_UID_NONCE, 24);
 
-  return btoa(
-    Uint8ToString(
-      nacl.secretbox(
-        StringToUint8(uid),
-        derivedKey.slice(0, 24), // Use first 24 bytes as nonce
-        derivedKey.slice(24), // Use remaining bytes as key
-      ),
-    ),
-  );
+  const ciphertext = nacl.secretbox(StringToUint8(uid), nonce, key);
+  return btoa(Uint8ToString(ciphertext));
 }
 
 function decryptChannel(encrypted, channelKey) {
-  const derivedKey = deriveKey(channelKey, INFO_CHANNEL, 56);
-  return Uint8ToString(
-    nacl.secretbox.open(
-      StringToUint8(atob(encrypted)),
-      derivedKey.slice(0, 24),
-      derivedKey.slice(24),
-    ),
-  );
+  const derivedKey = deriveKey(channelKey, INFO_CHANNEL);
+  const nonce = deriveKey(channelKey, INFO_CHANNEL_NONCE, 24);
+  const ciphertext = StringToUint8(atob(encrypted));
+  const decrypted = nacl.secretbox.open(ciphertext, nonce, derivedKey);
+
+  if (!decrypted) {
+    throw new Error(
+      "Channel decryption failed. Invalid key or corrupted data.",
+    );
+  }
+  return Uint8ToString(decrypted);
 }
 
 function decryptUid(encrypted, channelKey) {
-  const derivedKey = deriveKey(channelKey, INFO_UID, 56);
-  return Uint8ToString(
-    nacl.secretbox.open(
-      StringToUint8(atob(encrypted)),
-      derivedKey.slice(0, 24),
-      derivedKey.slice(24),
-    ),
-  );
+  const derivedKey = deriveKey(channelKey, INFO_UID);
+  const nonce = deriveKey(channelKey, INFO_UID_NONCE, 24);
+  const ciphertext = StringToUint8(atob(encrypted));
+  const decrypted = nacl.secretbox.open(ciphertext, nonce, derivedKey);
+
+  if (!decrypted) {
+    throw new Error("Uid decryption failed. Invalid key or corrupted data.");
+  }
+  return Uint8ToString(decrypted);
 }
