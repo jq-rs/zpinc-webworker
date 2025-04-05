@@ -2975,9 +2975,9 @@ const ZpincWorker = (function () {
           key: password.slice(0, 32),
         });
         salt.update(password);
+        salt.update(StringUtil.toUint8Array(channel));
 
         // Run scrypt
-        let derivedKey;
         scrypt(
           password,
           salt.digest(),
@@ -2988,43 +2988,65 @@ const ZpincWorker = (function () {
             dkLen: CONSTANTS.SCRYPT_DKLEN,
             encoding: "binary",
           },
-          function (result) {
-            derivedKey = result;
+          function (derivedKey) {
+            // We only expect one parameter (the derived key)
+            try {
+              // Check if derivedKey is present
+              if (!derivedKey) {
+                Logger.error("Key derivation failed", {
+                  error: "No derived key was returned",
+                });
+                return;
+              }
+
+              // Store password hash
+              crypto.dhKey.pw = derivedKey;
+
+              // Derive channel and message keys
+              crypto.channelKey = CryptoUtil.createChannelKey(derivedKey);
+              crypto.msgCryptKey = CryptoUtil.createMessageKey(derivedKey);
+
+              // Set up previous BD key if provided
+              if (prevBdKey) {
+                CryptoUtil.createPrevBd(channel, prevBdKey, crypto.channelKey);
+              }
+
+              // Encrypt and store UID and channel
+              state.connection.uid = CryptoUtil.encryptUid(
+                uid,
+                crypto.channelKey,
+              );
+              state.connection.channelId = CryptoUtil.encryptChannel(
+                channel,
+                crypto.channelKey,
+              );
+
+              // Clean up sensitive data
+              wipe(salt);
+              wipe(password);
+              wipe(derivedKey);
+
+              // Open socket connection
+              ConnectionManager.openSocket(channel, port, addr);
+
+              Logger.info("Channel initialized", {
+                channel,
+                address: addr,
+                port,
+              });
+            } catch (err) {
+              Logger.error("Key processing failed", {
+                error: err.message,
+                stack: err.stack || "No stack trace",
+              });
+
+              // Clean up any sensitive data
+              if (salt) wipe(salt);
+              if (password) wipe(password);
+              if (derivedKey) wipe(derivedKey);
+            }
           },
         );
-
-        // Store password hash
-        crypto.dhKey.pw = derivedKey;
-
-        // Derive channel and message keys
-        crypto.channelKey = CryptoUtil.createChannelKey(derivedKey);
-        crypto.msgCryptKey = CryptoUtil.createMessageKey(derivedKey);
-
-        // Set up previous BD key if provided
-        if (prevBdKey) {
-          CryptoUtil.createPrevBd(channel, prevBdKey, crypto.channelKey);
-        }
-
-        // Encrypt and store UID and channel
-        state.connection.uid = CryptoUtil.encryptUid(uid, crypto.channelKey);
-        state.connection.channelId = CryptoUtil.encryptChannel(
-          channel,
-          crypto.channelKey,
-        );
-
-        // Clean up sensitive data
-        wipe(salt);
-        wipe(password);
-        wipe(derivedKey);
-
-        // Open socket connection
-        ConnectionManager.openSocket(channel, port, addr);
-
-        Logger.info("Channel initialized", {
-          channel,
-          address: addr,
-          port,
-        });
       } catch (error) {
         Logger.error("Init command failed", {
           error: error.message,
