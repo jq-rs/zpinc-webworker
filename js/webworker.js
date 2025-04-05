@@ -583,38 +583,11 @@ const ZpincWorker = (function () {
     pseudoRandBytes(byteLength) {
       if (byteLength <= 0) throw new RangeError("byteLength MUST be > 0");
 
+      // Create buffer of the requested size
       let buf = new Uint8Array(byteLength);
-      if (!State.crypto.seed) {
-        State.crypto.seed = new Uint8Array(32);
-        self.crypto.getRandomValues(State.crypto.seed); // Use a strong initial seed
-      }
 
-      let val = new BLAKE2b(64, {
-        salt: CONSTANTS.SALTSTR,
-        personalization: CONSTANTS.PERSTR,
-        key: State.crypto.seed,
-      });
-
-      let bleft = byteLength;
-      let blen = 0;
-
-      while (bleft > 0) {
-        let v = val.digest();
-        let len = Math.min(v.length, bleft);
-        buf.set(v.slice(0, len), blen);
-        blen += len;
-        bleft -= len;
-        if (bleft > 0) {
-          val = new BLAKE2b(64, {
-            salt: CONSTANTS.SALTSTR,
-            personalization: CONSTANTS.PERSTR,
-            key: val.digest(),
-          });
-        }
-      }
-
-      // Update the global seed for next iteration
-      State.crypto.seed = val.digest();
+      // Fill it with cryptographically secure random values
+      self.crypto.getRandomValues(buf);
 
       return buf;
     },
