@@ -7,7 +7,7 @@ const Logger = (function () {
     TRACE: 4,
   };
 
-  let level = LogLevel.DEBUG;
+  let level = LogLevel.ERROR;
 
   function sanitize(obj) {
     if (!obj) return obj;
