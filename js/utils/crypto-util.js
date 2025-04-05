@@ -2,18 +2,26 @@ const CryptoUtil = {
   /**
    * Generate a pseudo-random byte array
    * @param {number} byteLength - Length of the array
-   * @return {Uint8Array} Random byte array
+   * @return {Uint8Array|null} Random byte array or null on error
    */
   pseudoRandBytes(byteLength) {
-    if (byteLength <= 0) throw new RangeError("byteLength MUST be > 0");
+    try {
+      if (byteLength <= 0) {
+        Logger.warn("Invalid byteLength for pseudoRandBytes", { byteLength });
+        return null;
+      }
 
-    // Create buffer of the requested size
-    let buf = new Uint8Array(byteLength);
+      // Create buffer of the requested size
+      let buf = new Uint8Array(byteLength);
 
-    // Fill it with cryptographically secure random values
-    self.crypto.getRandomValues(buf);
+      // Fill it with cryptographically secure random values
+      self.crypto.getRandomValues(buf);
 
-    return buf;
+      return buf;
+    } catch (error) {
+      Logger.error("Failed to generate random bytes", { error: error.message });
+      return null;
+    }
   },
 
   /**
@@ -21,12 +29,12 @@ const CryptoUtil = {
    * @param {Uint8Array} inputKey - Input key material
    * @param {Uint8Array} info - Context and application specific information
    * @param {number} length - Length of output key material
-   * @return {Uint8Array} Derived key
+   * @return {Uint8Array|null} Derived key or null on error
    */
   deriveKey(inputKey, info, length = 32) {
     if (!inputKey || !info) {
       Logger.error("Invalid parameters for key derivation");
-      throw new Error("Invalid parameters for key derivation");
+      return null;
     }
 
     try {
@@ -73,90 +81,144 @@ const CryptoUtil = {
       return output;
     } catch (error) {
       Logger.error("Key derivation failed", { error: error.message });
-      throw new Error("Key derivation failed");
+      return null;
     }
   },
 
   /**
    * Create a channel key from input key material
    * @param {Uint8Array} key - Input key material
-   * @return {Uint8Array} Channel key
+   * @return {Uint8Array|null} Channel key or null on error
    */
   createChannelKey(key) {
-    return this.deriveKey(key, Constants.CONSTANTS.DOMAIN_CHANKEY);
+    try {
+      const channelKey = this.deriveKey(
+        key,
+        Constants.CONSTANTS.DOMAIN_CHANKEY,
+      );
+      if (!channelKey) {
+        Logger.error("Failed to create channel key");
+        return null;
+      }
+      return channelKey;
+    } catch (error) {
+      Logger.error("Channel key creation failed", { error: error.message });
+      return null;
+    }
   },
 
   /**
    * Create a message key from input key material
    * @param {Uint8Array} key - Input key material
-   * @return {Uint8Array} Message key
+   * @return {Uint8Array|null} Message key or null on error
    */
   createMessageKey(key) {
-    return this.deriveKey(key, Constants.CONSTANTS.DOMAIN_ENCKEY);
+    try {
+      const messageKey = this.deriveKey(key, Constants.CONSTANTS.DOMAIN_ENCKEY);
+      if (!messageKey) {
+        Logger.error("Failed to create message key");
+        return null;
+      }
+      return messageKey;
+    } catch (error) {
+      Logger.error("Message key creation failed", { error: error.message });
+      return null;
+    }
   },
 
   /**
    * Encrypt a channel name
    * @param {string} channel - Channel name
    * @param {Uint8Array} channelKey - Channel key
-   * @return {string} Encrypted channel (base64)
+   * @return {string|null} Encrypted channel (base64) or null on error
    */
   encryptChannel(channel, channelKey) {
-    const key = this.deriveKey(channelKey, Constants.CONSTANTS.INFO_CHANNEL);
-    const nonce = this.deriveKey(
-      channelKey,
-      Constants.CONSTANTS.INFO_CHANNEL_NONCE,
-      24,
-    );
+    try {
+      const key = this.deriveKey(channelKey, Constants.CONSTANTS.INFO_CHANNEL);
+      if (!key) {
+        Logger.error("Failed to derive key for channel encryption");
+        return null;
+      }
 
-    const ciphertext = nacl.secretbox(
-      StringUtil.toUint8Array(channel),
-      nonce,
-      key,
-    );
+      const nonce = this.deriveKey(
+        channelKey,
+        Constants.CONSTANTS.INFO_CHANNEL_NONCE,
+        24,
+      );
+      if (!nonce) {
+        Logger.error("Failed to derive nonce for channel encryption");
+        wipe(key);
+        return null;
+      }
 
-    // Clean up
-    wipe(key);
-    wipe(nonce);
+      const ciphertext = nacl.secretbox(
+        StringUtil.toUint8Array(channel),
+        nonce,
+        key,
+      );
 
-    return btoa(StringUtil.fromUint8Array(ciphertext));
+      // Clean up
+      wipe(key);
+      wipe(nonce);
+
+      return btoa(StringUtil.fromUint8Array(ciphertext));
+    } catch (error) {
+      Logger.error("Channel encryption failed", { error: error.message });
+      return null;
+    }
   },
 
   /**
    * Decrypt a channel name
    * @param {string} encrypted - Encrypted channel (base64)
    * @param {Uint8Array} channelKey - Channel key
-   * @return {string} Decrypted channel name
+   * @return {string|null} Decrypted channel name or null on error
    */
   decryptChannel(encrypted, channelKey) {
-    const derivedKey = this.deriveKey(
-      channelKey,
-      Constants.CONSTANTS.INFO_CHANNEL,
-    );
-    const nonce = this.deriveKey(
-      channelKey,
-      Constants.CONSTANTS.INFO_CHANNEL_NONCE,
-      24,
-    );
+    let derivedKey = null;
+    let nonce = null;
 
     try {
-      const ciphertext = StringUtil.toUint8Array(atob(encrypted));
-      const decrypted = nacl.secretbox.open(ciphertext, nonce, derivedKey);
-
-      if (!decrypted) {
-        throw new Error("Channel decryption failed");
+      derivedKey = this.deriveKey(channelKey, Constants.CONSTANTS.INFO_CHANNEL);
+      if (!derivedKey) {
+        Logger.error("Failed to derive key for channel decryption");
+        return null;
       }
 
-      // Clean up
-      wipe(derivedKey);
-      wipe(nonce);
-
-      return StringUtil.fromUint8Array(decrypted);
-    } catch (error) {
-      Logger.error("Channel decryption failed", { error: error.message });
-      throw new Error(
-        "Channel decryption failed. Invalid key or corrupted data.",
+      nonce = this.deriveKey(
+        channelKey,
+        Constants.CONSTANTS.INFO_CHANNEL_NONCE,
+        24,
       );
+      if (!nonce) {
+        Logger.error("Failed to derive nonce for channel decryption");
+        wipe(derivedKey);
+        return null;
+      }
+
+      try {
+        const ciphertext = StringUtil.toUint8Array(atob(encrypted));
+        const decrypted = nacl.secretbox.open(ciphertext, nonce, derivedKey);
+
+        if (!decrypted) {
+          Logger.error("Channel decryption failed - invalid data");
+          return null;
+        }
+
+        return StringUtil.fromUint8Array(decrypted);
+      } catch (error) {
+        Logger.error("Channel decryption failed", { error: error.message });
+        return null;
+      }
+    } catch (error) {
+      Logger.error("Channel decryption preparation failed", {
+        error: error.message,
+      });
+      return null;
+    } finally {
+      // Always clean up sensitive data
+      if (derivedKey) wipe(derivedKey);
+      if (nonce) wipe(nonce);
     }
   },
 
@@ -164,55 +226,95 @@ const CryptoUtil = {
    * Encrypt a user ID
    * @param {string} uid - User ID
    * @param {Uint8Array} channelKey - Channel key
-   * @return {string} Encrypted UID (base64)
+   * @return {string|null} Encrypted UID (base64) or null on error
    */
   encryptUid(uid, channelKey) {
-    const key = this.deriveKey(channelKey, Constants.CONSTANTS.INFO_UID);
-    const nonce = this.deriveKey(
-      channelKey,
-      Constants.CONSTANTS.INFO_UID_NONCE,
-      24,
-    );
+    try {
+      const key = this.deriveKey(channelKey, Constants.CONSTANTS.INFO_UID);
+      if (!key) {
+        Logger.error("Failed to derive key for UID encryption");
+        return null;
+      }
 
-    const ciphertext = nacl.secretbox(StringUtil.toUint8Array(uid), nonce, key);
+      const nonce = this.deriveKey(
+        channelKey,
+        Constants.CONSTANTS.INFO_UID_NONCE,
+        24,
+      );
+      if (!nonce) {
+        Logger.error("Failed to derive nonce for UID encryption");
+        wipe(key);
+        return null;
+      }
 
-    // Clean up
-    wipe(key);
-    wipe(nonce);
+      const ciphertext = nacl.secretbox(
+        StringUtil.toUint8Array(uid),
+        nonce,
+        key,
+      );
 
-    return btoa(StringUtil.fromUint8Array(ciphertext));
+      // Clean up
+      wipe(key);
+      wipe(nonce);
+
+      return btoa(StringUtil.fromUint8Array(ciphertext));
+    } catch (error) {
+      Logger.error("UID encryption failed", { error: error.message });
+      return null;
+    }
   },
 
   /**
    * Decrypt a user ID
    * @param {string} encrypted - Encrypted UID (base64)
    * @param {Uint8Array} channelKey - Channel key
-   * @return {string} Decrypted user ID
+   * @return {string|null} Decrypted user ID or null on error
    */
   decryptUid(encrypted, channelKey) {
-    const derivedKey = this.deriveKey(channelKey, Constants.CONSTANTS.INFO_UID);
-    const nonce = this.deriveKey(
-      channelKey,
-      Constants.CONSTANTS.INFO_UID_NONCE,
-      24,
-    );
+    let derivedKey = null;
+    let nonce = null;
 
     try {
-      const ciphertext = StringUtil.toUint8Array(atob(encrypted));
-      const decrypted = nacl.secretbox.open(ciphertext, nonce, derivedKey);
-
-      if (!decrypted) {
-        throw new Error("UID decryption failed");
+      derivedKey = this.deriveKey(channelKey, Constants.CONSTANTS.INFO_UID);
+      if (!derivedKey) {
+        Logger.error("Failed to derive key for UID decryption");
+        return null;
       }
 
-      // Clean up
-      wipe(derivedKey);
-      wipe(nonce);
+      nonce = this.deriveKey(
+        channelKey,
+        Constants.CONSTANTS.INFO_UID_NONCE,
+        24,
+      );
+      if (!nonce) {
+        Logger.error("Failed to derive nonce for UID decryption");
+        wipe(derivedKey);
+        return null;
+      }
 
-      return StringUtil.fromUint8Array(decrypted);
+      try {
+        const ciphertext = StringUtil.toUint8Array(atob(encrypted));
+        const decrypted = nacl.secretbox.open(ciphertext, nonce, derivedKey);
+
+        if (!decrypted) {
+          Logger.error("UID decryption failed - invalid data");
+          return null;
+        }
+
+        return StringUtil.fromUint8Array(decrypted);
+      } catch (error) {
+        Logger.error("UID decryption failed", { error: error.message });
+        return null;
+      }
     } catch (error) {
-      Logger.error("UID decryption failed", { error: error.message });
-      throw new Error("Uid decryption failed. Invalid key or corrupted data.");
+      Logger.error("UID decryption preparation failed", {
+        error: error.message,
+      });
+      return null;
+    } finally {
+      // Always clean up sensitive data
+      if (derivedKey) wipe(derivedKey);
+      if (nonce) wipe(nonce);
     }
   },
 
@@ -222,12 +324,21 @@ const CryptoUtil = {
    * @return {number} Padded size
    */
   padme(msgsize) {
-    const L = msgsize;
-    const E = Math.floor(Math.log2(L));
-    const S = Math.floor(Math.log2(E)) + 1;
-    const lastBits = E - S;
-    const bitMask = 2 ** lastBits - 1;
-    return (L + bitMask) & ~bitMask;
+    try {
+      const L = msgsize;
+      if (L <= 0) {
+        Logger.warn("Invalid message size for padme", { msgsize });
+        return msgsize; // Return original size instead of failing
+      }
+      const E = Math.floor(Math.log2(L));
+      const S = Math.floor(Math.log2(E)) + 1;
+      const lastBits = E - S;
+      const bitMask = 2 ** lastBits - 1;
+      return (L + bitMask) & ~bitMask;
+    } catch (error) {
+      Logger.error("Padding calculation failed", { error: error.message });
+      return msgsize; // Return original size as fallback
+    }
   },
 
   /**
@@ -235,37 +346,56 @@ const CryptoUtil = {
    * @param {string} channel - Channel name
    * @param {string} prevBdKey - Previous BD key (hex string)
    * @param {Uint8Array} channelKey - Channel key
+   * @return {boolean} Success status
    */
   createPrevBd(channel, prevBdKey, channelKey) {
+    let rnd = null;
+    let digest = null;
+
     try {
       const crypto = State.crypto.channels[channel];
       if (!crypto) {
-        throw new Error("Channel not initialized");
+        Logger.error("Channel not initialized", { channel });
+        return false;
       }
 
-      const rnd = new BLAKE2b(32, {
+      rnd = new BLAKE2b(32, {
         salt: Constants.CONSTANTS.SALTSTR,
         personalization: Constants.CONSTANTS.PERSTR,
         key: channelKey,
       });
 
       rnd.update(StringUtil.toUint8Array(prevBdKey));
-      const digest = rnd.digest();
+      digest = rnd.digest();
 
-      crypto.dhKey.prevBdChannelKey = this.createChannelKey(digest);
-      crypto.dhKey.prevBdMsgCryptKey = this.createMessageKey(digest);
+      const prevBdChannelKey = this.createChannelKey(digest);
+      if (!prevBdChannelKey) {
+        Logger.error("Failed to create previous BD channel key", { channel });
+        return false;
+      }
 
-      // Clean up
-      wipe(digest);
-      wipe(rnd);
+      const prevBdMsgCryptKey = this.createMessageKey(digest);
+      if (!prevBdMsgCryptKey) {
+        Logger.error("Failed to create previous BD message key", { channel });
+        wipe(prevBdChannelKey);
+        return false;
+      }
+
+      crypto.dhKey.prevBdChannelKey = prevBdChannelKey;
+      crypto.dhKey.prevBdMsgCryptKey = prevBdMsgCryptKey;
 
       Logger.debug("Previous BD keys created successfully", { channel });
+      return true;
     } catch (error) {
       Logger.error("Failed to create previous BD keys", {
         channel,
         error: error.message,
       });
-      throw error;
+      return false;
+    } finally {
+      // Clean up sensitive data
+      if (digest) wipe(digest);
+      if (rnd) wipe(rnd);
     }
   },
 };
