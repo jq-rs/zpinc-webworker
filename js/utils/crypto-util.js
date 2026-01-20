@@ -393,7 +393,6 @@ const CryptoUtil = {
         Logger.error("Failed to create previous BD channel key", { channel });
         return false;
       }
-      console.log("Created prevBdChannelKey " + prevBdChannelKey)
 
       const prevBdMsgCryptKey = this.createMessageKey(digest);
       if (!prevBdMsgCryptKey) {
@@ -401,7 +400,6 @@ const CryptoUtil = {
         wipe(prevBdChannelKey);
         return false;
       }
-      console.log("Created prevBdMsgKey " + prevBdMsgCryptKey);
 
       crypto.dhKey.prevBdChannelKey = prevBdChannelKey;
       crypto.dhKey.prevBdMsgCryptKey = prevBdMsgCryptKey;
