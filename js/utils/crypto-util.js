@@ -91,9 +91,18 @@ const CryptoUtil = {
    * @return {Uint8Array|null} Channel key or null on error
    */
   createChannelKey(key) {
+    let hashedKey = null;
     try {
+      // Hash the input key with BLAKE2b
+      const hash = new BLAKE2b(32, {
+        salt: Constants.CONSTANTS.SALTSTR,
+        personalization: Constants.CONSTANTS.PERSTR,
+      });
+      hash.update(key);
+      hashedKey = hash.digest();
+
       const channelKey = this.deriveKey(
-        key,
+        hashedKey,
         Constants.CONSTANTS.DOMAIN_CHANKEY,
       );
       if (!channelKey) {
@@ -104,6 +113,9 @@ const CryptoUtil = {
     } catch (error) {
       Logger.error("Channel key creation failed", { error: error.message });
       return null;
+    } finally {
+      // Clean up sensitive data
+      if (hashedKey) wipe(hashedKey);
     }
   },
 
