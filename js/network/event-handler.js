@@ -92,7 +92,6 @@ const EventHandler = {
       // Notify client
       const uid = CryptoUtil.decryptUid(connection.uid, crypto.channelKey);
       postMessage(["forwardsecrecy", uid, channel, bdKey]);
-      console.log("Forward secrecy on, bdKey: " + bdKey)
 
       Logger.info("Forward secrecy enabled", { channel });
     } catch (error) {
@@ -120,7 +119,6 @@ const EventHandler = {
       // Notify client
       const uid = CryptoUtil.decryptUid(connection.uid, crypto.channelKey);
       postMessage(["forwardsecrecyoff", uid, channel]);
-      console.log("Forward secrecy off")
 
       Logger.info("Forward secrecy disabled", { channel });
     } catch (error) {

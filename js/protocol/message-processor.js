@@ -95,7 +95,7 @@ const MessageProcessor = {
         message,
         msgtype,
         fsEnabled,
-	      msgChksum
+        msgChksum
       ]);
     } catch (error) {
       Logger.error("Error processing message", {
@@ -149,8 +149,6 @@ const MessageProcessor = {
       blakehmac.update(noncem.slice(24));
       blakehmac.update(hmacarr);
       prevBdHmac = blakehmac.digest();
-      console.log("prevBdChannelKey" + crypto.dhKey.prevBdChannelKey);
-      console.log("prevBdCryptKey " + crypto.dhKey.prevBdMsgCryptKey)
     } else {
       prevBdHmac = new Uint8Array(Constants.CONSTANTS.HMAC_LEN);
     }
@@ -175,17 +173,14 @@ const MessageProcessor = {
 
     // Only perform these assignments if the corresponding key exists
     if (crypto.dhKey.bdMsgCryptKey && isBdMatch) {
-      console.log("Is bd match")
       crypt = crypto.dhKey.bdMsgCryptKey;
     }
 
     if (crypto.dhKey.prevBdMsgCryptKey && isPrevBdMatch) {
-      console.log("Is prev match")
       crypt = crypto.dhKey.prevBdMsgCryptKey;
     }
 
     if (isRegularMatch) {
-      console.log("Is reg match")
       crypt = crypto.msgCryptKey;
     }
 
