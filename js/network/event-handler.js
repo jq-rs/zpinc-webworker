@@ -19,7 +19,6 @@ const EventHandler = {
         uid: connection.uid,
         channel: connection.channelId,
       });
-
       connection.webSocket.send(join);
 
       // Notify client
@@ -28,7 +27,7 @@ const EventHandler = {
       if (reopen) {
         postMessage(["resync", uid, channel]);
       } else {
-        postMessage(["init", uid, channel]);
+        postMessage(["init", uid, channel, connection.uid, connection.channelId]);
       }
 
       Logger.info("Connection established", {
@@ -90,17 +89,10 @@ const EventHandler = {
     }
 
     try {
-      // Convert BD key to hex string
-      let bdKeyHex;
-      if (typeof bdKey === "object" && bdKey.toString) {
-        bdKeyHex = bdKey.toString(16);
-      } else {
-        bdKeyHex = String(bdKey);
-      }
-
       // Notify client
       const uid = CryptoUtil.decryptUid(connection.uid, crypto.channelKey);
-      postMessage(["forwardsecrecy", uid, channel, bdKeyHex]);
+      postMessage(["forwardsecrecy", uid, channel, bdKey]);
+      console.log("Forward secrecy on, bdKey: " + bdKey)
 
       Logger.info("Forward secrecy enabled", { channel });
     } catch (error) {
@@ -128,6 +120,7 @@ const EventHandler = {
       // Notify client
       const uid = CryptoUtil.decryptUid(connection.uid, crypto.channelKey);
       postMessage(["forwardsecrecyoff", uid, channel]);
+      console.log("Forward secrecy off")
 
       Logger.info("Forward secrecy disabled", { channel });
     } catch (error) {

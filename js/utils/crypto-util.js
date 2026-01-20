@@ -365,7 +365,15 @@ const CryptoUtil = {
         key: channelKey,
       });
 
-      rnd.update(StringUtil.toUint8Array(prevBdKey));
+      if (!(prevBdKey instanceof Uint8Array)) {
+        Logger.error("prevBdKey must be a Uint8Array", {
+          channel,
+          type: typeof prevBdKey
+        });
+        return false;
+      }
+
+      rnd.update(prevBdKey);
       digest = rnd.digest();
 
       const prevBdChannelKey = this.createChannelKey(digest);
@@ -373,6 +381,7 @@ const CryptoUtil = {
         Logger.error("Failed to create previous BD channel key", { channel });
         return false;
       }
+      console.log("Created prevBdChannelKey " + prevBdChannelKey)
 
       const prevBdMsgCryptKey = this.createMessageKey(digest);
       if (!prevBdMsgCryptKey) {
@@ -380,6 +389,7 @@ const CryptoUtil = {
         wipe(prevBdChannelKey);
         return false;
       }
+      console.log("Created prevBdMsgKey " + prevBdMsgCryptKey);
 
       crypto.dhKey.prevBdChannelKey = prevBdChannelKey;
       crypto.dhKey.prevBdMsgCryptKey = prevBdMsgCryptKey;
