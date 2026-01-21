@@ -737,7 +737,7 @@ const MessageProcessor = {
         "send",
         uid,
         channel,
-        msgtype & Constants.CONSTANTS.MSGISMULTIPART ? true : false,
+        msgtype,
         msgChksum,
       ]);
     } catch (error) {
