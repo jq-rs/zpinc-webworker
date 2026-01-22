@@ -95,6 +95,13 @@ const ConnectionManager = {
     connection.webSocket.onmessage = function (event) {
       try {
         if (!event.data) return;
+        if (typeof event.data === 'string') {
+          Logger.info("Init BD due to join", { channel });
+          State.initBd(channel);
+          return;
+        }
+        const sipkey = SipHash.string16_to_key('\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0');
+        const msgChksum = SipHash.hash_hex(sipkey, new Uint8Array(event.data));
 
         const msg = MessageProcessor.decodeMessage(event.data);
         if (!msg) {
@@ -102,7 +109,7 @@ const ConnectionManager = {
           return;
         }
 
-        MessageProcessor.processMessage(channel, msg);
+        MessageProcessor.processMessage(channel, msg, msgChksum);
       } catch (error) {
         Logger.error("Error in message handler", {
           channel,

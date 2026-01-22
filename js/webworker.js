@@ -29,6 +29,7 @@ importScripts(
   "wipe.js",
   "int.js",
   "binary.js",
+  "siphash.js",
   "utils/string-util.js",
   "core/constants.js",
   "core/logger.js",

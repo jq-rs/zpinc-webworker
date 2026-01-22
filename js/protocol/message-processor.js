@@ -3,8 +3,9 @@ const MessageProcessor = {
    * Process an incoming message
    * @param {string} channel - Channel name
    * @param {Object} msg - Message object
+   * @param {string} msgChksum - Message SipHash chksum
    */
-  processMessage(channel, msg) {
+  processMessage(channel, msg, msgChksum) {
     //sanity check
     if (
       msg.message.byteLength <= Constants.CONSTANTS.NONCE_LEN ||
@@ -94,6 +95,7 @@ const MessageProcessor = {
         message,
         msgtype,
         fsEnabled,
+        msgChksum
       ]);
     } catch (error) {
       Logger.error("Error processing message", {
@@ -122,7 +124,7 @@ const MessageProcessor = {
 
     // Always calculate all three HMACs to maintain constant time
     let bdHmac = null;
-    if (crypto.dhKey.bdMsgCryptKey) {
+    if (crypto.dhKey.bdMsgCryptKey && crypto.dhKey.bdChannelKey) {
       let blakehmac = new BLAKE2b(Constants.CONSTANTS.HMAC_LEN, {
         salt: Constants.CONSTANTS.SALTSTR,
         personalization: Constants.CONSTANTS.PERSTR,
@@ -137,7 +139,7 @@ const MessageProcessor = {
     }
 
     let prevBdHmac = null;
-    if (crypto.dhKey.prevBdMsgCryptKey) {
+    if (crypto.dhKey.prevBdMsgCryptKey && crypto.dhKey.prevBdChannelKey) {
       let blakehmac = new BLAKE2b(Constants.CONSTANTS.HMAC_LEN, {
         salt: Constants.CONSTANTS.SALTSTR,
         personalization: Constants.CONSTANTS.PERSTR,
@@ -727,12 +729,16 @@ const MessageProcessor = {
       // Send message
       connection.webSocket.send(encodedMsg);
 
+      let sipkey = SipHash.string16_to_key('\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0');
+      let msgChksum = SipHash.hash_hex(sipkey, new Uint8Array(encodedMsg));
+
       // Notify that message was sent
       postMessage([
         "send",
         uid,
         channel,
         msgtype & Constants.CONSTANTS.MSGISMULTIPART ? true : false,
+        msgChksum,
       ]);
     } catch (error) {
       Logger.error("Error sending message", {
