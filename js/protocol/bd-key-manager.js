@@ -635,12 +635,12 @@ const BdKeyManager = {
     // Get collected keys
     const { index, xkeys } = this.collectBdKeys(channel, myuid);
     if (index < 0 || !xkeys || xkeys.length === 0) {
-      Logger.error("Invalid BD key collection", {
+      /*Logger.error("Invalid BD key collection", {
         channel,
         myuid,
         index,
         keyCount: xkeys?.length || 0,
-      });
+      });*/
       return;
     }
 
