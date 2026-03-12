@@ -98,6 +98,14 @@ const ConnectionManager = {
         if (typeof event.data === 'string') {
           Logger.info("Init BD due to join", { channel });
           State.initBd(channel);
+          try {
+              const crypto = State.crypto.channels[channel];
+              const join = JSON.parse(event.data);
+              const uid = CryptoUtil.decryptUid(join.uid, crypto.channelKey);
+              postMessage(["presence", uid, channel]);
+          } catch (e) {
+              Logger.warn("Failed to parse join presence", { channel, error: e.message });
+          }
           return;
         }
         const sipkey = SipHash.string16_to_key('\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0');
