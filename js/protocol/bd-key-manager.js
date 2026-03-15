@@ -405,20 +405,20 @@ const BdKeyManager = {
    */
   shouldResetDhBd(channel, uid, bd) {
     const pubcnt = this.countParticipants(channel);
+    const crypto = State.crypto.channels[channel];
 
-    // Case 1: More than 2 participants but BD is all zeros
     const hasMultipleParticipants = pubcnt > 2;
     const hasBdZeroes = BinaryUtil.isZeroArray(bd);
-
-    // Case 2: Exactly 2 participants but BD is not zeros
     const hasExactlyTwoParticipants = pubcnt === 2;
     const hasBdNonZeroes = !BinaryUtil.isZeroArray(bd);
 
-    // Compute both conditions in constant time
-    const condition1 = hasMultipleParticipants & hasBdZeroes;
+    // Only reset for zeros if we already have a real BD value for this uid
+    const hasExistingBd = !!(crypto && crypto.bdDb && crypto.bdDb[uid] &&
+      !BinaryUtil.isZeroArray(crypto.bdDb[uid]));
+
+    const condition1 = hasMultipleParticipants & hasBdZeroes & hasExistingBd;
     const condition2 = hasExactlyTwoParticipants & hasBdNonZeroes;
 
-    // Combine using bitwise OR to maintain constant time
     return (condition1 | condition2) !== 0;
   },
 
@@ -507,6 +507,15 @@ const BdKeyManager = {
 
     // Collect BD keys and check counts
     const { bdcnt, pubcnt } = this.collectBdKeys(channel, myuid);
+
+    // Wait until all joined members have contributed their pubkey
+    const joincnt = Object.keys(crypto.joinDb || {}).length;
+    if (pubcnt < joincnt) {
+        Logger.debug("Waiting for pubkeys from all joined members", {
+            channel, pubcnt, joincnt,
+        });
+        return;
+    }
 
     // Only skip if we have everything completely set up
     const shouldSkip =

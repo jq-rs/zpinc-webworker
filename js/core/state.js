@@ -50,6 +50,7 @@ const State = {
           prevBdChannelKey: null,
           fsInformed: false,
         },
+        joinDb: {},
 
         // BD state
         bdDb: {},
