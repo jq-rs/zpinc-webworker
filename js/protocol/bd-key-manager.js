@@ -86,47 +86,6 @@ const BdKeyManager = {
   },
 
   /**
-   * Check if DH-BD state should be reset
-   * @param {string} channel - Channel name
-   * @param {string} uid - Sender user ID
-   * @param {Uint8Array} pub - Public key
-   * @param {number} msgtype - Message type flags
-   * @param {Uint8Array} keyArray - Key data array
-   * @return {boolean} True if reset needed
-   */
-  shouldResetDhBd(channel, uid, pub, msgtype, keyArray) {
-    const crypto = State.crypto.channels[channel];
-    if (!crypto || !crypto.dhDb) return false;
-
-    const existingKey = crypto.dhDb[uid];
-    if (!existingKey) return false;
-
-    // Check for key mismatch
-    const keyMismatch = !BinaryUtil.isEqual(existingKey, pub);
-
-    // Check for short message with existing BD
-    const isShortMessageWithExistingBd =
-      keyArray.length === Constants.CONSTANTS.DH_BITS / 8 &&
-      !(msgtype & Constants.CONSTANTS.MSGISBDONE) &&
-      crypto.dhDb[uid] &&
-      crypto.bdDb &&
-      crypto.bdDb[uid];
-
-    if (keyMismatch || isShortMessageWithExistingBd) {
-      Logger.debug("DH-BD reset required", {
-        reason: keyMismatch ? "key mismatch" : "short message with existing BD",
-        channel,
-        uid,
-        messageType: msgtype,
-        keyLength: keyArray.length,
-      });
-      return true;
-    }
-
-    return false;
-  },
-
-  /**
    * Check if we should process this as a BD message
    * @param {Uint8Array} keyArray - Key data array
    * @param {number} msgtype - Message type flags
@@ -384,17 +343,19 @@ const BdKeyManager = {
    * @param {Uint8Array} bd - BD value
    * @return {boolean} True if reset needed
    */
-  shouldResetBd(channel, uid, bd) {
-    const crypto = State.crypto.channels[channel];
-    if (!crypto || !crypto.bdDb || !crypto.bdDb[uid]) {
-      return false;
-    }
+   shouldResetBd(channel, uid, bd) {
+     const crypto = State.crypto.channels[channel];
+     if (!crypto || !crypto.bdDb) return false;
 
-    const existingBd = crypto.bdDb[uid];
+     const existingBd = crypto.bdDb[uid]
+       ? crypto.bdDb[uid]
+       : new Uint8Array(Constants.CONSTANTS.DH_BITS / 8);
 
-    // Use constant-time comparison
-    return !BinaryUtil.isEqual(existingBd, bd);
-  },
+     const hasExisting = !!(crypto.bdDb[uid]);
+
+     // Always compare in constant time, only return true if entry existed and mismatched
+     return hasExisting & !BinaryUtil.isEqual(existingBd, bd);
+   },
 
   /**
    * Check if DH-BD should be reset based on BD value (constant-time)
@@ -403,24 +364,32 @@ const BdKeyManager = {
    * @param {Uint8Array} bd - BD value
    * @return {boolean} True if reset needed
    */
-  shouldResetDhBd(channel, uid, bd) {
-    const pubcnt = this.countParticipants(channel);
-    const crypto = State.crypto.channels[channel];
+   shouldResetDhBd(channel, uid, bd) {
+     const pubcnt = this.countParticipants(channel);
+     const crypto = State.crypto.channels[channel];
 
-    const hasMultipleParticipants = pubcnt > 2;
-    const hasBdZeroes = BinaryUtil.isZeroArray(bd);
-    const hasExactlyTwoParticipants = pubcnt === 2;
-    const hasBdNonZeroes = !BinaryUtil.isZeroArray(bd);
+     // Case 1: More than 2 participants but BD is all zeros
+     const hasMultipleParticipants = pubcnt > 2;
+     const hasBdZeroes = BinaryUtil.isZeroArray(bd);
 
-    // Only reset for zeros if we already have a real BD value for this uid
-    const hasExistingBd = !!(crypto && crypto.bdDb && crypto.bdDb[uid] &&
-      !BinaryUtil.isZeroArray(crypto.bdDb[uid]));
+     // Case 2: Exactly 2 participants but BD is not zeros
+     const hasExactlyTwoParticipants = pubcnt === 2;
+     const hasBdNonZeroes = !BinaryUtil.isZeroArray(bd);
 
-    const condition1 = hasMultipleParticipants & hasBdZeroes & hasExistingBd;
-    const condition2 = hasExactlyTwoParticipants & hasBdNonZeroes;
+     // Only reset for zeros if we already have a real BD value for this uid
+     // Always call isZeroArray to maintain constant time - use dummy zeros if no entry
+     const existingBd = (crypto && crypto.bdDb && crypto.bdDb[uid])
+       ? crypto.bdDb[uid]
+       : new Uint8Array(Constants.CONSTANTS.DH_BITS / 8);
+     const hasExistingBd = !BinaryUtil.isZeroArray(existingBd);
 
-    return (condition1 | condition2) !== 0;
-  },
+     // Compute all conditions in constant time using bitwise operators
+     const condition1 = hasMultipleParticipants & hasBdZeroes & hasExistingBd;
+     const condition2 = hasExactlyTwoParticipants & hasBdNonZeroes;
+
+     // Combine using bitwise OR to maintain constant time
+     return (condition1 | condition2) !== 0;
+   },
 
   /**
    * Check if we should request presence acknowledgment
@@ -451,26 +420,24 @@ const BdKeyManager = {
    * @param {Uint8Array} bd - BD value
    * @return {boolean} True if matched and acked
    */
-  isBdMatchedAndAcked(channel, uid, bd) {
-    const crypto = State.crypto.channels[channel];
-    if (!crypto || !crypto.bdDb) return false;
+   isBdMatchedAndAcked(channel, uid, bd) {
+     const crypto = State.crypto.channels[channel];
+     if (!crypto || !crypto.bdDb) return false;
 
-    // Check BD match
-    if (!bd || !crypto.bdDb[uid]) {
-      return false;
-    }
+     const existingBd = (bd && crypto.bdDb[uid])
+       ? crypto.bdDb[uid]
+       : new Uint8Array(Constants.CONSTANTS.DH_BITS / 8);
 
-    const bdsMatch = BinaryUtil.isEqual(crypto.bdDb[uid], bd);
+     const hasExisting = !!(bd && crypto.bdDb[uid]);
+     const bdsMatch = BinaryUtil.isEqual(existingBd, bd || existingBd);
 
-    Logger.debug("BD match status", {
-      channel,
-      uid,
-      bdsMatch,
-      hasExistingBd: Boolean(crypto.bdDb[uid]),
-    });
+     Logger.debug("BD match status", {
+       channel, uid, bdsMatch,
+       hasExistingBd: Boolean(crypto.bdDb[uid]),
+     });
 
-    return bdsMatch;
-  },
+     return hasExisting & bdsMatch;
+   },
 
   /**
    * Update BD database and calculate keys
