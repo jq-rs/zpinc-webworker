@@ -336,8 +336,10 @@ const BdKeyManager = {
   },
 
   /**
-   * Check if BD should be reset (constant-time)
-
+   * Check if BD should be reset.
+   * The comparison itself is constant-time (via BinaryUtil.isEqual), but the
+   * early return on uninitialized state is not — it leaks whether the channel
+   * has BD state for a given uid through processing time.
    * @param {string} channel - Channel name
    * @param {string} uid - Sender user ID
    * @param {Uint8Array} bd - BD value
@@ -358,7 +360,9 @@ const BdKeyManager = {
    },
 
   /**
-   * Check if DH-BD should be reset based on BD value (constant-time)
+   * Check if DH-BD should be reset based on BD value.
+   * Condition flags are combined with bitwise operators to avoid branching on
+   * the result, but the guard clause returns early for uninitialized channels.
    * @param {string} channel - Channel name
    * @param {string} uid - Sender user ID
    * @param {Uint8Array} bd - BD value
@@ -414,7 +418,10 @@ const BdKeyManager = {
   },
 
   /**
-   * Check if BD is matched and acknowledged
+   * Check if BD is matched and acknowledged.
+   * Uses constant-time comparison for the BD values.  The early return on
+   * missing state and the `bd || existingBd` short-circuit are not
+   * constant-time — they leak receiver-side BD state through processing time.
    * @param {string} channel - Channel name
    * @param {string} uid - Sender user ID
    * @param {Uint8Array} bd - BD value
@@ -701,7 +708,11 @@ const BdKeyManager = {
   },
 
   /**
-   * Calculate final secret key (constant-time)
+   * Calculate final secret key.
+   * The inner loop always iterates the same number of rounds and the final
+   * ristretto255.add is always executed.  A constant-time select
+   * (BinaryUtil.ctSelect) keeps or discards the result without branching
+   * on whether each participant's key exists.
    * @param {Uint8Array} skey - Initial secret key
    * @param {Array<Uint8Array>} xkeys - Array of BD keys
    * @param {number} index - Participant index
@@ -723,25 +734,22 @@ const BdKeyManager = {
         let adjustedIndex = (i + index) % len;
         let base = xkeys[adjustedIndex];
 
-        // Check if base exists - constant time
         let baseExists = base !== undefined && base !== null;
-
-        // Only update isValid, don't exit the loop
         isValid = isValid & baseExists;
 
-        // Always perform calculation - will be invalid if base doesn't exist
-        // but will still take the same amount of time
-        let step = base || new Uint8Array(32); // Use dummy if missing
+        // Use a dummy value when the key is missing so the inner loop still
+        // runs, keeping iteration count independent of which keys are present.
+        let step = base || new Uint8Array(32);
         let tempBase = base || new Uint8Array(32);
 
         for (let j = 0; j < len - sub; j++) {
           tempBase = ristretto255.add(tempBase, step);
         }
 
-        // Only use the result if valid
-        if (baseExists) {
-          resultSkey = ristretto255.add(tempBase, resultSkey);
-        }
+        // Always execute the add; use constant-time select to keep or
+        // discard the result, avoiding a branch on participant presence.
+        const added = ristretto255.add(tempBase, resultSkey);
+        resultSkey = BinaryUtil.ctSelect(baseExists, added, resultSkey);
 
         sub++;
       }
@@ -759,7 +767,7 @@ const BdKeyManager = {
   },
 
   /**
-   * Generate crypto keys from secret key (constant-time)
+   * Generate crypto keys from secret key.
    * @param {string} channel - Channel name
    * @param {Uint8Array} skey - Secret key
    */

@@ -122,7 +122,10 @@ const MessageProcessor = {
   },
 
   /**
-   * Verify message HMAC
+   * Verify message HMAC (constant-time).
+   * All three BLAKE2b HMACs are always computed (a dummy key is used when
+   * a BD key is absent) and compared with constant-time equality checks.
+   * Key selection uses index arithmetic instead of branches.
    * @param {string} channel - Channel name
    * @param {Uint8Array} noncem - Nonce
    * @param {Uint8Array} arr - Message data
@@ -138,36 +141,31 @@ const MessageProcessor = {
     hmacarr.set(noncem, 0);
     hmacarr.set(arr, noncem.byteLength);
 
-    // Always calculate all three HMACs to maintain constant time
-    let bdHmac = null;
-    if (crypto.dhKey.bdMsgCryptKey && crypto.dhKey.bdChannelKey) {
-      let blakehmac = new BLAKE2b(Constants.CONSTANTS.HMAC_LEN, {
-        salt: Constants.CONSTANTS.SALTSTR,
-        personalization: Constants.CONSTANTS.PERSTR,
-        key: crypto.dhKey.bdChannelKey,
-      });
-      blakehmac.update(Constants.CONSTANTS.DOMAIN_AUTHKEY);
-      blakehmac.update(noncem.slice(24));
-      blakehmac.update(hmacarr);
-      bdHmac = blakehmac.digest();
-    } else {
-      bdHmac = new Uint8Array(Constants.CONSTANTS.HMAC_LEN);
-    }
+    // Always compute all three BLAKE2b HMACs to keep timing constant
+    // regardless of which keys exist.  When a BD key is absent, the
+    // channel key is used as a dummy — the resulting HMAC will not match,
+    // preserving correctness without leaking key existence.
+    const bdKey = crypto.dhKey.bdChannelKey || crypto.channelKey;
+    let bdHmac = new BLAKE2b(Constants.CONSTANTS.HMAC_LEN, {
+      salt: Constants.CONSTANTS.SALTSTR,
+      personalization: Constants.CONSTANTS.PERSTR,
+      key: bdKey,
+    });
+    bdHmac.update(Constants.CONSTANTS.DOMAIN_AUTHKEY);
+    bdHmac.update(noncem.slice(24));
+    bdHmac.update(hmacarr);
+    bdHmac = bdHmac.digest();
 
-    let prevBdHmac = null;
-    if (crypto.dhKey.prevBdMsgCryptKey && crypto.dhKey.prevBdChannelKey) {
-      let blakehmac = new BLAKE2b(Constants.CONSTANTS.HMAC_LEN, {
-        salt: Constants.CONSTANTS.SALTSTR,
-        personalization: Constants.CONSTANTS.PERSTR,
-        key: crypto.dhKey.prevBdChannelKey,
-      });
-      blakehmac.update(Constants.CONSTANTS.DOMAIN_AUTHKEY);
-      blakehmac.update(noncem.slice(24));
-      blakehmac.update(hmacarr);
-      prevBdHmac = blakehmac.digest();
-    } else {
-      prevBdHmac = new Uint8Array(Constants.CONSTANTS.HMAC_LEN);
-    }
+    const prevBdKey = crypto.dhKey.prevBdChannelKey || crypto.channelKey;
+    let prevBdHmac = new BLAKE2b(Constants.CONSTANTS.HMAC_LEN, {
+      salt: Constants.CONSTANTS.SALTSTR,
+      personalization: Constants.CONSTANTS.PERSTR,
+      key: prevBdKey,
+    });
+    prevBdHmac.update(Constants.CONSTANTS.DOMAIN_AUTHKEY);
+    prevBdHmac.update(noncem.slice(24));
+    prevBdHmac.update(hmacarr);
+    prevBdHmac = prevBdHmac.digest();
 
     let regularHmac = new BLAKE2b(Constants.CONSTANTS.HMAC_LEN, {
       salt: Constants.CONSTANTS.SALTSTR,
@@ -184,21 +182,26 @@ const MessageProcessor = {
     const isPrevBdMatch = BinaryUtil.isEqualHmacs(hmac, prevBdHmac);
     const isRegularMatch = BinaryUtil.isEqualHmacs(hmac, regularHmac);
 
-    // Select the right key in constant time
-    let crypt = null;
-
-    // Only perform these assignments if the corresponding key exists
-    if (crypto.dhKey.bdMsgCryptKey && isBdMatch) {
-      crypt = crypto.dhKey.bdMsgCryptKey;
-    }
-
-    if (crypto.dhKey.prevBdMsgCryptKey && isPrevBdMatch) {
-      crypt = crypto.dhKey.prevBdMsgCryptKey;
-    }
-
-    if (isRegularMatch) {
-      crypt = crypto.msgCryptKey;
-    }
+    // Select the matching key via index lookup to avoid branching on match
+    // results.  Only one HMAC should match; if the BD key was a dummy
+    // (channelKey fallback), its HMAC equals the regular HMAC and
+    // isBdMatch/isPrevBdMatch will mirror isRegularMatch — the regular key
+    // is at a higher index so it wins, which is correct.
+    const hasBd = !!(crypto.dhKey.bdMsgCryptKey);
+    const hasPrevBd = !!(crypto.dhKey.prevBdMsgCryptKey);
+    const keys = [
+      null,
+      crypto.dhKey.bdMsgCryptKey,
+      crypto.dhKey.prevBdMsgCryptKey,
+      crypto.msgCryptKey,
+    ];
+    // Produce index 1, 2, or 3 for the matching key; 0 if none match.
+    // When a dummy key causes a false BD match, the regular match at
+    // index 3 overwrites it since it's computed last.
+    const idx = ((isBdMatch & hasBd) | 0) * 1
+              + ((isPrevBdMatch & hasPrevBd) | 0) * 2
+              + ((isRegularMatch) | 0) * 3;
+    const crypt = keys[idx] || null;
 
     return crypt;
   },

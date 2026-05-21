@@ -331,7 +331,9 @@ const CryptoUtil = {
   },
 
   /**
-   * Calculate Padmé padding (constant-time)
+   * Calculate Padmé padding.
+   * Uses only arithmetic (no secret-dependent branches), though the input
+   * message size is not itself secret — padding is applied before encryption.
    * @param {number} msgsize - Message size
    * @return {number} Padded size
    */
