@@ -18,10 +18,12 @@ const MessageProcessor = {
       return;
     }
 
+    let noncem = null;
+    let decrypted = null;
     try {
       // Extract message components
       let fsEnabled = false;
-      let noncem = msg.message.slice(0, Constants.CONSTANTS.NONCE_LEN);
+      noncem = msg.message.slice(0, Constants.CONSTANTS.NONCE_LEN);
       let arr = msg.message.slice(
         Constants.CONSTANTS.NONCE_LEN,
         msg.message.byteLength - Constants.CONSTANTS.HMAC_LEN,
@@ -49,7 +51,7 @@ const MessageProcessor = {
       const uid = CryptoUtil.decryptUid(msg.uid, crypto.channelKey);
 
       // Decrypt message content
-      let decrypted = nacl.secretbox.open(message, noncem.slice(0, 24), crypt);
+      decrypted = nacl.secretbox.open(message, noncem.slice(0, 24), crypt);
       if (!decrypted || decrypted.length < Constants.CONSTANTS.HDRLEN) {
         Logger.warn("Message decryption failed or invalid size", {
           channel,
@@ -62,6 +64,17 @@ const MessageProcessor = {
       let msgsz = BinaryUtil.toUint16Val(decrypted.slice(0, 2)); //includes also version which is zero
       let sid = decrypted.slice(2, 10);
       let keysz = BinaryUtil.toUint16Val(decrypted.slice(10, 12));
+
+      // Bounds check parsed sizes
+      if (msgsz > decrypted.length || msgsz + keysz > decrypted.length) {
+        Logger.warn("Invalid message/key size in decrypted payload", {
+          channel,
+          msgsz,
+          keysz,
+          decryptedLength: decrypted.length,
+        });
+        return;
+      }
 
       let timeU16 = BinaryUtil.toUint16Val(decrypted.slice(12, 14));
       let weekU16 = BinaryUtil.toUint16Val(decrypted.slice(14, 16));
@@ -102,6 +115,9 @@ const MessageProcessor = {
         channel,
         error: error.message,
       });
+    } finally {
+      wipe(decrypted);
+      wipe(noncem);
     }
   },
 
@@ -349,9 +365,11 @@ const MessageProcessor = {
       return;
     }
 
+    let data_array = null;
+    let nonce = null;
     try {
-      const data_array = new TextEncoder().encode(data);
-      let nonce = new Uint8Array(32);
+      data_array = new TextEncoder().encode(data);
+      nonce = new Uint8Array(32);
       self.crypto.getRandomValues(nonce);
 
       // Create timestamps
@@ -427,6 +445,9 @@ const MessageProcessor = {
         uid,
         error: error.message,
       });
+    } finally {
+      wipe(data_array);
+      wipe(nonce);
     }
   },
 

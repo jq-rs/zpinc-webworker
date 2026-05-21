@@ -58,6 +58,7 @@ const Constants = (function () {
       PERBDSTR: StringUtil.toUint8Array("ZpincBdDomain!v1"),
       BEGIN: new Date(Date.UTC(2018, 0, 1, 0, 0, 0)),
     };
+    Object.freeze(CONSTANTS);
   }
 
   return {

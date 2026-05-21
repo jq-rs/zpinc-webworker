@@ -186,6 +186,9 @@
 	function decode(data, tagger, simpleValue) {
 		var dataView = new DataView(data);
 		var offset = 0;
+		var depth = 0;
+		var MAX_DEPTH = 32;
+		var MAX_ALLOC = 65536;
 
 		if (typeof tagger !== "function")
 			tagger = function(value) { return value; };
@@ -300,6 +303,9 @@
 		}
 
 		function decodeItem() {
+			if (++depth > MAX_DEPTH)
+				throw "Max nesting depth exceeded";
+			try {
 			var initialByte = readUint8();
 			var majorType = initialByte >> 5;
 			var additionalInformation = initialByte & 0x1f;
@@ -355,18 +361,27 @@
 					var retArray;
 					if (length < 0) {
 						retArray = [];
-						while (!readBreak())
+						while (!readBreak()) {
+							if (retArray.length >= MAX_ALLOC)
+								throw "Array too large";
 							retArray.push(decodeItem());
+						}
 					} else {
+						if (length > MAX_ALLOC)
+							throw "Array too large";
 						retArray = new Array(length);
 						for (i = 0; i < length; ++i)
 							retArray[i] = decodeItem();
 					}
 					return retArray;
 				case 5:
-					var retObject = {};
+					var retObject = Object.create(null);
 					for (i = 0; i < length || length < 0 && !readBreak(); ++i) {
+						if (i >= MAX_ALLOC)
+							throw "Map too large";
 						var key = decodeItem();
+						if (typeof key === 'string' && (key === '__proto__' || key === 'constructor' || key === 'prototype'))
+							throw "Unsafe map key";
 						retObject[key] = decodeItem();
 					}
 					return retObject;
@@ -386,6 +401,9 @@
 							return simpleValue(length);
 					}
 			}
+			} finally {
+				depth--;
+			}
 		}
 
 		var ret = decodeItem();
@@ -404,4 +422,3 @@
 		global.CBOR = obj;
 
 })(this);
-

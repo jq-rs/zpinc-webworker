@@ -29,11 +29,11 @@ const State = {
         msgCryptKey: null,
 
         // Session information
-        sidDb: {},
+        sidDb: Object.create(null),
         sid: null,
 
         // DH state
-        dhDb: {},
+        dhDb: Object.create(null),
         dhKey: {
           pw: null,
           bdpw: null,
@@ -50,11 +50,11 @@ const State = {
           prevBdChannelKey: null,
           fsInformed: false,
         },
-        joinDb: {},
+        joinDb: Object.create(null),
 
         // BD state
-        bdDb: {},
-        bdAckDb: {},
+        bdDb: Object.create(null),
+        bdAckDb: Object.create(null),
       };
     }
 
@@ -105,10 +105,14 @@ const State = {
     const crypto = this.crypto.channels[channel];
     if (!crypto) return;
 
-    crypto.sidDb = {};
+    crypto.sidDb = Object.create(null);
+    wipe(crypto.dhKey.sid);
     crypto.dhKey.sid = null;
+    wipe(crypto.dhKey.public);
     crypto.dhKey.public = null;
+    wipe(crypto.dhKey.group);
     crypto.dhKey.group = null;
+    wipe(crypto.dhKey.private);
     crypto.dhKey.private = null;
 
     this.initBd(channel);
@@ -119,12 +123,16 @@ const State = {
     const crypto = this.crypto.channels[channel];
     if (!crypto) return;
 
-    crypto.bdDb = {};
-    crypto.bdAckDb = {};
+    crypto.bdDb = Object.create(null);
+    crypto.bdAckDb = Object.create(null);
+    wipe(crypto.dhKey.secret);
     crypto.dhKey.secret = null;
     crypto.dhKey.secretAcked = false;
+    wipe(crypto.dhKey.bd);
     crypto.dhKey.bd = null;
+    wipe(crypto.dhKey.bdMsgCryptKey);
     crypto.dhKey.bdMsgCryptKey = null;
+    wipe(crypto.dhKey.bdChannelKey);
     crypto.dhKey.bdChannelKey = null;
 
     if (crypto.dhKey.fsInformed) {
@@ -138,7 +146,7 @@ const State = {
     const crypto = this.crypto.channels[channel];
     if (!crypto) return;
 
-    crypto.dhDb = {};
+    crypto.dhDb = Object.create(null);
     if (crypto.dhKey.public) {
       crypto.dhDb[myuid] = crypto.dhKey.public;
     }
@@ -151,7 +159,9 @@ const State = {
     const crypto = this.crypto.channels[channel];
     if (!crypto) return;
 
+    wipe(crypto.dhKey.prevBdChannelKey);
     crypto.dhKey.prevBdChannelKey = null;
+    wipe(crypto.dhKey.prevBdMsgCryptKey);
     crypto.dhKey.prevBdMsgCryptKey = null;
   },
 };
